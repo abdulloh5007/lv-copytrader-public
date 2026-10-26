@@ -1,0 +1,157 @@
+# LV Copytrader — the app (FastAPI + built SPA) and the MT5 sidecar (Wine).
+#
+# No `version:` key: it is obsolete in Compose v2 and only produces a warning.
+#
+#   docker compose up --build                 # normal operation
+#   docker compose --profile debug up         # additionally starts the VNC viewer below,
+#                                             # which is how the operator sees and dismisses
+#                                             # a broker dialog inside the MT5 terminal.
+#
+# Secrets (SECRET_KEY, MT5_PASSWORD, SIDECAR_TOKEN, ...) come from .env, which is git-ignored
+# and excluded from the build context by .dockerignore — nothing secret is baked into an image.
+
+name: lvct
+
+services:
+  # =====================================================================================
+  # The application: FastAPI, the agent loop, Telethon ingest, and the built dashboard.
+  # One container, one port, one process (see the Dockerfile CMD: --workers 1, no --reload).
+  # =====================================================================================
+  app:
+    image: lvct-app:latest
+    build:
+      # The context is the repository root because the image builds the frontend too.
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      FORWARDED_ALLOW_IPS: "${SP_TRUSTED_PROXY_IPS:-127.0.0.1}"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # SQLite database, downloaded signal images, Telethon session material.
+      - lvCT-data:/data
+    depends_on:
+      - mt5-sidecar
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.cli.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      # Generous, because startup runs create_all, connects the sidecar RPC and reconciles.
+      start_period: 40s
+      retries: 5
+
+  # =====================================================================================
+  # MetaTrader 5 under Wine. Trading logic never runs in here — this service only exposes
+  # the whitelisted JSON-RPC surface that app/trading/rpc.py calls.
+  # =====================================================================================
+  mt5-sidecar:
+    build:
+      context: ./mt5-sidecar
+      dockerfile: Dockerfile
+    image: signalpilot/mt5-sidecar:local
+    env_file: .env
+    volumes:
+      # Wine prefix, the MT5 install and Config/servers.dat + Config/accounts.dat. This is
+      # what makes the first login-through-VNC happen once, forever: a fresh Wine prefix has
+      # no broker server list, and this volume is where it survives every restart.
+      - lvCT-mt5-config:/config
+      # The Xvfb display socket, shared with the `vnc` service below.
+      #
+      # NOT harmless, and this mount was the root cause of the long-running "MT5 IPC" bug:
+      # a named volume PERSISTS, so the X99 socket inode created by one container is still
+      # sitting here when the next one starts, with nothing behind it. entrypoint.sh used to
+      # take that file as proof that a display was up, skip Xvfb, and hand the terminal a
+      # dead DISPLAY -- terminal64.exe then exited at window creation and every
+      # mt5.initialize() rung returned (-10001, 'IPC send failed'). start_xvfb() now probes
+      # the display with xdpyinfo and clears a stale socket, so the mount is safe again.
+      # Keep that probe if this volume is ever changed: it is what makes sharing survivable.
+      - lvCT-x11:/tmp/.X11-unix
+    # Wine forks helpers (services.exe, explorer.exe, terminal64.exe); PID 1 must reap them.
+    init: true
+    # Give the terminal time to flush its Config/ files instead of being SIGKILLed.
+    stop_grace_period: 30s
+    restart: unless-stopped
+    # ---------------------------------------------------------------------------------
+    # DELIBERATELY NO `ports:` SECTION. The sidecar's RPC port (18812) must NOT be
+    # published to the host: /rpc can send orders, and an unauthenticated order_send on an
+    # open port is the one hole that would make everything else in this spec pointless
+    # (BUILD_PROMPT §1). It is reachable only from `app` over the compose network, at
+    # SIDECAR_URL=http://mt5-sidecar:18812, authenticated with X-SP-Token: $SIDECAR_TOKEN.
+    # ---------------------------------------------------------------------------------
+
+  # =====================================================================================
+  # Debug-only VNC viewer onto the sidecar's X server. MT5 self-updates and will eventually
+  # put a modal dialog in front of the terminal; `docker compose --profile debug up` is how
+  # the operator looks at it and clicks it away. It reuses the sidecar image (which provides
+  # x11vnc) and overrides the entrypoint so it starts x11vnc instead of the terminal.
+  #
+  # It attaches to the sidecar's X server through the shared /tmp/.X11-unix volume rather
+  # than `network_mode: "service:mt5-sidecar"`: Docker refuses `ports:` on a service that
+  # shares another container's network namespace, and moving the publish onto mt5-sidecar is
+  # exactly what the rule above forbids. Sharing the socket keeps this service in its own
+  # namespace, so 5901 can be published while 18812 stays private.
+  # =====================================================================================
+  vnc:
+    profiles: ["debug"]
+    image: signalpilot/mt5-sidecar:local
+    build:
+      context: ./mt5-sidecar
+      dockerfile: Dockerfile
+    depends_on:
+      - mt5-sidecar
+    # Share the sidecar's process namespace so `docker compose exec vnc ps aux` shows
+    # terminal64.exe and the Wine helpers when diagnosing a stuck terminal.
+    pid: "service:mt5-sidecar"
+    volumes:
+      - lvCT-x11:/tmp/.X11-unix
+    entrypoint: ["x11vnc"]
+    command: ["-display", ":99", "-forever", "-rfbport", "5901", "-nopw"]
+    ports:
+      # Bound to loopback on purpose: -nopw means anyone who reaches this port gets full
+      # control of the machine running the trading terminal. Reach it from another host with
+      # `ssh -L 5901:127.0.0.1:5901 <host>`, then point a VNC client at localhost:5901.
+      - "127.0.0.1:5901:5901"
+    restart: "no"
+
+  tunnel:
+    # `docker compose --profile tunnel up -d` publishes the dashboard on a trycloudflare
+    # hostname. It lives here rather than in a shell on the host for one reason: a tunnel
+    # started from an interactive session dies with that session, which is exactly how
+    # access to this machine was lost once already. Under compose it carries the same
+    # restart policy as the app and comes back with it.
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    depends_on:
+      - app
+    # --metrics is not optional here: a quick tunnel prints its generated hostname to stderr
+    # once and never again, so `curl 127.0.0.1:2000/quicktunnel` is the only way to ask what
+    # the current URL is after the fact -- and it changes on every restart, because a URL
+    # that survives restarts needs a named tunnel and a Cloudflare account.
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --metrics
+      - 0.0.0.0:2000
+      - --url
+      - http://app:8000
+    ports:
+      - "127.0.0.1:2000:2000"
+    restart: unless-stopped
+
+volumes:
+  # The database, signal images and Telethon session — losing this loses trade history.
+  lvCT-data:
+    external: true
+    name: lvct_lvCT-data
+  # The Wine prefix and the MT5 installation, including the broker server list.
+  lvCT-mt5-config:
+    external: true
+    name: lvct_lvCT-mt5-config
+  # The Xvfb socket directory, shared between mt5-sidecar and the debug vnc service.
+  # Runtime state, never data: everything in here is safe to delete while the stack is down,
+  # and a leftover X99 socket in it is exactly what start_xvfb() has to detect and remove.
+  lvCT-x11:
+    external: true
+    name: lvct_lvCT-x11

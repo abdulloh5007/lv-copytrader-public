@@ -1,0 +1,10 @@
+{
+  "package": "fex-emu-armv8.2",
+  "version": "2610-1~n",
+  "package_sha256": "6e7546ca3da523c88968edd9adaa8e5773ce32803178755935f5e5423a528c76",
+  "wine_version": "11.0",
+  "binary_sha256": {
+    "FEX": "0960f1dd25b7eca68550c7b5061644bde3b3c48aba71d29a542f1792aadd80e9",
+    "FEXServer": "beba767ca6b2803dd763f0c852ed19fd1c6523611cd3c3bd1aff0b12c5284d37"
+  }
+}

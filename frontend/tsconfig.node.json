@@ -1,0 +1,25 @@
+// Covers vite.config.ts only — the app itself is tsconfig.json.
+// "DOM" is in `lib` for the standard-library URL and for import.meta.url, which
+// TypeScript declares in lib.dom.d.ts. It is what lets this config typecheck
+// without @types/node, which is deliberately not a dependency of this project.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "types": [],
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["vite.config.ts"]
+}

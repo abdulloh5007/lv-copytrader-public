@@ -1,0 +1,72 @@
+# --- secrets and local configuration -------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- python --------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- runtime data (database, downloaded signal images, telethon material) -------------
+data/
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.session
+*.session-journal
+
+# --- frontend ------------------------------------------------------------------------
+node_modules/
+frontend/dist/
+frontend/node_modules/
+backend/static/
+*.tsbuildinfo
+.vite/
+
+# --- mt5 sidecar: wine prefix, terminal install and installer artefacts ---------------
+.wine/
+wine/
+wineprefix/
+mt5-sidecar/.wine/
+mt5-sidecar/config/
+mt5-sidecar/wine/
+mt5-sidecar/*.exe
+mt5setup.exe
+*.wine
+winetricks.log
+.cache/wine/
+
+# --- os and editor -------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Deployment snapshots and credentials must never enter source or images.
+backups/
+runtime-state/
+*.bak
+*.bak-*
+*.bak*
+TUNNEL_URL
+artifacts/
+
+# Private deployment credentials and runtime preparation output.
+secrets/
+deploy-runtime/
+migration-static/

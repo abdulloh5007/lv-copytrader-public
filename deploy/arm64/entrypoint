@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+# An interrupted Docker stop can leave the X lock in the writable container layer.
+display="${DISPLAY:-:99}"
+number="${display#*:}"
+number="${number%%.*}"
+if [[ "$number" =~ ^[0-9]+$ ]] && ! xdpyinfo -display "$display" >/dev/null 2>&1; then
+    if ! pgrep -x Xvfb >/dev/null 2>&1; then
+        rm -f "/tmp/.X${number}-lock" "/tmp/.X11-unix/X${number}"
+    fi
+fi
+exec /entrypoint.sh "$@"

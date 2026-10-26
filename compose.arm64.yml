@@ -1,0 +1,53 @@
+# ARM64 host: native backend + Windows MT5 under FEX. See deploy/arm64/README.md.
+services:
+  app:
+    image: lvct-app:arm64-owner-migration
+    platform: linux/arm64
+    environment:
+      SIDECAR_URL: http://mt5-sidecar:18812
+    networks:
+      default:
+        ipv4_address: 172.19.0.3
+  mt5-sidecar:
+    image: signalpilot/mt5-sidecar:arm-fex-wine11.0-20261023
+    platform: linux/amd64
+    build: !reset null
+    entrypoint: [/usr/local/bin/arm64-entrypoint]
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: 1.8
+    pids_limit: 768
+    environment:
+      FEX_ROOTFS: /
+      SP_INIT_CREDENTIALS_FIRST: "1"
+      WINESERVER: /usr/local/bin/wineserver
+    volumes: !override
+      - lvCT-mt5-config:/config
+      - lvCT-x11:/tmp/.X11-unix
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/runtime/arm64-entrypoint:/usr/local/bin/arm64-entrypoint:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/runtime/rpc_server.py:/opt/signalpilot/rpc_server.py:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/wine:/usr/local/bin/wine:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/wineserver:/usr/local/bin/wineserver:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/wineserver:/opt/wine-stable/bin/wineserver:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/runtime/wineserver.real:/usr/local/libexec/wineserver.real:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/grep:/usr/local/bin/grep:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/extracted/usr/bin/FEX:/usr/bin/FEX:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/extracted/usr/bin/FEXServer:/usr/bin/FEXServer:ro
+      - ${ARM_COMPAT_DIR:-/opt/copytrader-compat}/fex/extracted/usr/share/fex-emu:/usr/share/fex-emu:ro
+      - /lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:ro
+      - /lib/ld-linux-aarch64.so.1:/lib/ld-linux-aarch64.so.1:ro
+    networks:
+      default:
+        ipv4_address: 172.19.0.4
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.1
+    platform: linux/arm64
+    networks:
+      default:
+        ipv4_address: 172.19.0.2
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
+          gateway: 172.19.0.1

@@ -1,0 +1,1843 @@
+/* ==========================================================================
+   LV Copytrader — components.css
+   --------------------------------------------------------------------------
+   Reusable primitives only. Anything page-specific (the signal feed, the
+   thinking block, the run stream, the account readout) lives with its own
+   component. Every value here is a var(--token) from tokens.css; the only
+   colour keywords used are `transparent` and `currentColor`, neither of which
+   carries a palette value.
+
+   Density is the point: table rows are var(--row-h) (28px), cards are padded
+   var(--sp-2) / var(--sp-3), controls are var(--control-h) (30px). Depth comes
+   from --surface against --surface-2 and a 1px --border. NO DROP SHADOWS ON
+   DATA SURFACES — .modal is the single exception, and its shadow colour is
+   --overlay.
+
+   MARKUP CONTRACTS
+   ----------------
+   card      <section class="card">
+                <header class="card__header">
+                  <h2 class="card__title">…</h2>
+                  <div class="card__actions">…</div>
+                </header>
+                <div class="card__body">…</div>
+              </section>
+             .card--flush removes the body padding (tables, feeds).
+
+   button    <button class="btn btn--primary btn--sm">…</button>
+             Variants: --primary (solid --accent, ink is --bg), --danger
+             (outlined; --short is never a solid fill, see tokens.css §4),
+             --ghost (no border), --sm.
+
+   badge     <span class="badge badge--long">▲ BUY</span>
+             The colour is never alone: the component must print BUY/SELL or a
+             directional arrow inside the badge.
+
+   table     <div class="scroll-y"><table class="table">…</table></div>
+             Sticky header, zebra-free, 1px rules. Numeric columns get
+             class="num" on BOTH the th and the td, plus .mono on the td.
+
+   field     <div class="field field--invalid">
+                <label class="field__label" for="x">…</label>
+                <input id="x" aria-describedby="x-err">
+                <p class="field__hint">…</p>
+                <p class="field__error" id="x-err">…</p>
+              </div>
+             Errors render next to the field. Never as a toast.
+
+   dot       <span class="dot dot--ok">MT5</span>
+             The dot is a ::before marker; the text label is required.
+
+   switch    <button class="switch switch--lg" role="switch" aria-checked="true">
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+                <span class="switch__label">ARMED</span>
+              </button>
+             State is read from aria-checked="true" or data-on="true".
+
+   modal     <div class="modal__backdrop"><div class="modal" role="dialog">
+                <header class="modal__header">…</header>
+                <div class="modal__body">…</div>
+                <footer class="modal__footer">…</footer>
+              </div></div>
+
+   tabs      <div class="tabs" role="tablist">
+                <button class="tab" role="tab" aria-selected="true">…</button>
+              </div>
+   ========================================================================== */
+
+
+/* ==========================================================================
+   Layout atoms
+   ========================================================================== */
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.row--tight { gap: var(--sp-1); }
+.row--wide  { gap: var(--sp-4); }
+.row--top   { align-items: flex-start; }
+.row--base  { align-items: baseline; }
+.row--wrap  { flex-wrap: wrap; }
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+.col--tight { gap: var(--sp-1); }
+.col--wide  { gap: var(--sp-4); }
+.col--grow  { flex: 1 1 auto; }
+
+/* .stack is .col with the section rhythm rather than the control rhythm. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+.stack--wide { gap: var(--sp-5); }
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.scroll-y--grow { flex: 1 1 auto; }
+.scroll-y--x    {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+
+/* ==========================================================================
+   Numeric face — the .mono base is declared in base.css (§11 puts
+   font-variant-numeric there); these are its sizing companions.
+   ========================================================================== */
+
+.mono--sm { font-size: var(--fs-1); }
+.mono--lg { font-size: var(--fs-4); }
+.mono--xl {
+  font-size: var(--fs-5);
+  line-height: var(--lh-tight);
+  font-weight: 500;
+}
+
+
+/* ==========================================================================
+   Pane — a titled region, not a box
+   --------------------------------------------------------------------------
+   Ordinary sections used to sit in `.card` chrome (fill, 1px border, radius).
+   That boxed every block of text on the page. A pane is the same markup
+   contract with none of the wrapping: hierarchy comes from type, spacing and
+   a hairline rule under the title.
+
+   Markup is unchanged so existing sections keep working:
+
+       <section class="card">
+         <header class="card__header">
+           <h2 class="card__title">…</h2>
+           <div class="card__actions">…</div>
+         </header>
+         <div class="card__body">…</div>
+       </section>
+   ========================================================================== */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.card--grow { flex: 1 1 auto; }
+
+.card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  flex-wrap: wrap;
+  min-height: var(--control-h);
+  padding: var(--sp-2) 0;
+  background: transparent;
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.card__title {
+  font-size: var(--fs-3);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.card__body {
+  padding: var(--sp-3) 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  flex: 1 1 auto;
+}
+
+/*
+ * A readout nobody has heard from in 30 s (AccountPanel). The dim is a CSS
+ * state, not an inline style, so it can fade instead of snapping — and so the
+ * property that animates is named rather than left to `all`.
+ */
+.card__body[data-stale="true"] {
+  opacity: 0.6;
+  transition: opacity var(--dur) var(--ease);
+}
+
+/* Tables and feeds run to the pane edge; the header keeps the same inset
+   as a feed row so the title lines up with the first message. */
+.card--flush > .card__body {
+  padding: 0;
+  gap: 0;
+}
+
+.card--flush > .card__header,
+.card--flush > .card__footer {
+  padding-left: var(--sp-3);
+  padding-right: var(--sp-3);
+}
+
+.card__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  flex-wrap: wrap;
+  padding: var(--sp-3) 0;
+  border-top: var(--border-w) solid var(--border);
+  background: transparent;
+}
+
+
+/* ==========================================================================
+   Button
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  /* `position` is for the hit target below, not for anything visible. */
+  position: relative;
+  /* Named, one by one: `all` would drag `filter` and `box-shadow` into every
+     hover and animate the focus ring with them. */
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    filter var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+/*
+ * THE HIT TARGET. A cockpit control is 30px tall because the panel is dense;
+ * a finger is not. The pseudo-element carries the missing 10px OUTSIDE the
+ * painted box — the button still looks 30px and answers at 40px.
+ *
+ * It grows on the vertical axis ONLY. Buttons in this app sit in horizontal
+ * rows 4px apart (`.row--tight`), and a horizontal skirt would put two hit
+ * areas on top of each other — a control that fires its neighbour is worse
+ * than one that is small. Every vertical stack here is >= 8px apart, so two
+ * skirts at most touch.
+ */
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: -5px 0;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  /* Exactly 0.96. Below 0.95 a 30px control reads as collapsing, not pressing. */
+  transform: scale(0.96);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Solid accent. --bg is the correct ink in both themes (tokens.css §4). */
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.12);
+}
+
+.btn--primary:active:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(0.94);
+}
+
+/* Destructive. Outlined on purpose: --short cannot carry --bg ink at an
+   accessible ratio in the light theme, and a kill switch should read as armed
+   rather than shout permanently. */
+.btn--danger {
+  background: var(--surface);
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn--danger:active:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--danger);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--accent-dim);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.btn--ghost:active:not(:disabled) {
+  background: var(--accent-dim);
+  border-color: transparent;
+}
+
+.btn--sm {
+  height: var(--control-h-sm);
+  min-width: var(--control-h-sm);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-1);
+}
+
+/* 24px painted, 40px answered. */
+.btn--sm::after {
+  inset: -8px 0;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+
+/* ==========================================================================
+   Badge — a chip that always carries a word, never colour alone
+   ========================================================================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-1);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  /* A badge that changes verdict in place — a capability going on or off, a
+     status becoming an error — crosses over instead of cutting. Named, so the
+     transition can never reach `transform` and start moving the chip about. */
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.badge--long {
+  color: var(--long);
+  border-color: var(--long);
+}
+
+.badge--short {
+  color: var(--short);
+  border-color: var(--short);
+}
+
+.badge--warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.badge--ok {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.badge--dim {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.badge--accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.badge__num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+
+/* ==========================================================================
+   Table — dense, sticky header, zebra-free
+   ========================================================================== */
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-2);
+  color: var(--text);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  text-align: left;
+  font-size: var(--fs-1);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  /* inset rule survives the sticky repaint that a border-bottom does not */
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.table tbody td {
+  height: var(--row-h);
+  padding: 0 var(--sp-2);
+  border-bottom: var(--border-w) solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.table tbody tr[aria-selected="true"] td {
+  background: var(--accent-dim);
+}
+
+/* External / read-only rows: dimmed, and the component still prints the word. */
+.table tbody tr.is-readonly td {
+  color: var(--text-dim);
+}
+
+/*
+ * Row-level controls. A row is var(--row-h) (28px) and the next row's buttons
+ * are 28px away, so the standard 40px skirt would have every Close button
+ * overlapping the one below it. Inside a table the skirt therefore grows to
+ * the ROW — the largest target that is still unambiguous — and the row itself
+ * is the affordance: hover paints the whole of it.
+ */
+.table .btn::after,
+.table .btn--sm::after {
+  inset: -2px 0;
+}
+
+/* An expanded row — the modify form, the close form, the result strip — is not
+   a dense row: it spans every column and lays its controls out with real space
+   around them, so the full skirt goes back on. */
+.table td[colspan] .btn::after {
+  inset: -5px 0;
+}
+
+.table td[colspan] .btn--sm::after {
+  inset: -8px 0;
+}
+
+/* Same reasoning for the links in a cell — the signal reference and the
+   permalink arrow answer to the full height of their row. */
+.table td a {
+  position: relative;
+}
+
+.table td a::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+
+.table .iconlink::after {
+  inset: -2px 0;
+}
+
+/* Numeric columns. Put .num on the th and the td, .mono on the td. */
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table .num--wide {
+  min-width: 96px;
+}
+
+.table td.is-long  { color: var(--long); font-weight: 600; }
+.table td.is-short { color: var(--short); font-weight: 600; }
+.table td.is-dim   { color: var(--text-dim); }
+
+.table caption {
+  caption-side: bottom;
+  padding: var(--sp-2);
+  font-size: var(--fs-1);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+
+/* ==========================================================================
+   Field — label, control, hint, and an error that sits next to the input
+   ========================================================================== */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.field__label {
+  font-size: var(--fs-1);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+}
+
+.field input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field select,
+.field textarea,
+.field__control {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--sp-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  color: var(--text);
+  background: var(--bg);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.field textarea,
+textarea.field__control {
+  height: auto;
+  min-height: calc(var(--control-h) * 2);
+  padding: var(--sp-2);
+  line-height: var(--lh);
+}
+
+.field input.mono,
+.field .field__control.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input:not([type="checkbox"]):not([type="radio"]):hover:not(:disabled),
+.field select:hover:not(:disabled),
+.field textarea:hover:not(:disabled),
+.field__control:hover:not(:disabled) {
+  border-color: var(--text-dim);
+}
+
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled,
+.field__control:disabled {
+  opacity: 0.5;
+  background: var(--surface-2);
+}
+
+.field input[readonly],
+.field textarea[readonly] {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.field__hint {
+  font-size: var(--fs-1);
+  line-height: var(--lh);
+  color: var(--text-dim);
+}
+
+/* The one place an error is allowed to appear. No toasts anywhere. */
+.field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  font-size: var(--fs-1);
+  line-height: var(--lh);
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.field--invalid input:not([type="checkbox"]):not([type="radio"]),
+.field--invalid select,
+.field--invalid textarea,
+.field--invalid .field__control,
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* Label on the left, control on the right — settings toggles and limits. */
+.field--row {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.field--row .field__label {
+  flex: 1 1 auto;
+  font-size: var(--fs-2);
+  color: var(--text);
+}
+
+.field--row input:not([type="checkbox"]):not([type="radio"]),
+.field--row select,
+.field--row .field__control {
+  flex: 0 0 auto;
+  width: 160px;
+}
+
+.field--row .field__hint,
+.field--row .field__error {
+  flex: 1 0 100%;
+}
+
+
+/* ==========================================================================
+   Status dot — colour plus a required text label
+   ========================================================================== */
+
+.dot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-1);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.dot::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.dot--ok {
+  color: var(--text);
+}
+
+.dot--ok::before {
+  background: var(--ok);
+}
+
+.dot--bad {
+  color: var(--danger);
+}
+
+.dot--bad::before {
+  background: var(--danger);
+  animation: sp-pulse 2s var(--ease) infinite;
+}
+
+.dot--idle {
+  color: var(--text-dim);
+}
+
+.dot--idle::before {
+  background: var(--text-dim);
+}
+
+.dot--warn {
+  color: var(--warn);
+}
+
+.dot--warn::before {
+  background: var(--warn);
+}
+
+
+/* ==========================================================================
+   Icon link — a one-glyph link that still has somewhere to be pressed
+   --------------------------------------------------------------------------
+   The permalink arrow beside a signal reference. As a bare glyph it was about
+   ten pixels wide; here it is a 24px square with a 40px skirt (var(--row-h)
+   inside a table, where 40 cannot fit), and it keeps the dim/accent treatment
+   the rest of the meta chrome uses.
+   ========================================================================== */
+
+.iconlink {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-inline-start: var(--sp-1);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.iconlink:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+  text-decoration: none;
+}
+
+.iconlink:active {
+  transform: scale(0.96);
+}
+
+.iconlink::after {
+  content: "";
+  position: absolute;
+  inset: -8px 0;
+}
+
+
+/* ==========================================================================
+   Keyboard cap
+   ========================================================================== */
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--surface-3);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+
+/* ==========================================================================
+   Switch — the base of the ARM control
+   ========================================================================== */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  /* The button itself is transparent — only the track and the word are painted
+     — so a 44px box costs nothing visually and gives the most consequential
+     control in the app a target a hand can hit. */
+  min-height: var(--touch);
+  gap: var(--sp-2);
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-dim);
+}
+
+.switch__track {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 26px;
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: 999px;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+/* The press lands on the track, which is the part that looks like a control. */
+.switch:active:not(:disabled) .switch__track {
+  transform: scale(0.96);
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition:
+    transform var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.switch__label {
+  font-size: var(--fs-2);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.switch[aria-checked="true"],
+.switch[data-on="true"] {
+  color: var(--long);
+}
+
+.switch[aria-checked="true"] .switch__track,
+.switch[data-on="true"] .switch__track {
+  background: var(--long);
+  border-color: var(--long);
+}
+
+.switch[aria-checked="true"] .switch__thumb,
+.switch[data-on="true"] .switch__thumb {
+  transform: translateX(22px);
+  background: var(--bg);
+}
+
+.switch:disabled,
+.switch[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The ARM control is the largest control on the page. */
+.switch--lg {
+  gap: var(--sp-3);
+}
+
+.switch--lg .switch__track {
+  width: 76px;
+  height: 38px;
+}
+
+.switch--lg .switch__thumb {
+  width: 30px;
+  height: 30px;
+  top: 3px;
+  left: 3px;
+}
+
+.switch--lg[aria-checked="true"] .switch__thumb,
+.switch--lg[data-on="true"] .switch__thumb {
+  transform: translateX(38px);
+}
+
+.switch--lg .switch__label {
+  font-size: var(--fs-4);
+  letter-spacing: 0.06em;
+}
+
+
+/* ==========================================================================
+   Modal — the one surface allowed a shadow, and its colour is --overlay
+   ========================================================================== */
+
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: var(--overlay);
+  overscroll-behavior: contain;
+  animation: sp-fade-in var(--dur) var(--ease);
+}
+
+/*
+ * The close. Softer than the open on purpose: no scale, a fixed 4px of travel
+ * instead of the 8px it arrived with, and var(--dur-fast) rather than
+ * var(--dur). Nothing is dismissed with a flourish. The dialog is already
+ * inert by then — focus went back to the trigger the moment `open` flipped —
+ * so it must not eat a click on the way out.
+ */
+.modal__backdrop.is-leaving {
+  pointer-events: none;
+  animation: sp-fade-out var(--dur-fast) var(--ease) both;
+}
+
+.modal__backdrop.is-leaving .modal {
+  animation: sp-modal-out var(--dur-fast) var(--ease) both;
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100%);
+  max-height: min(80vh, 640px);
+  min-height: 0;
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 64px var(--overlay);
+  overflow: hidden;
+  animation: sp-modal-in var(--dur) var(--ease);
+}
+
+/*
+ * The dialog arrives as three parts, not as one rectangle: the question, then
+ * what it is about, then what you can do about it — 90ms apart, in the order
+ * the eye reads them.
+ */
+.modal__header { animation: sp-chunk-in var(--dur) var(--ease) both; }
+.modal__body   { animation: sp-chunk-in var(--dur) var(--ease) 90ms both; }
+.modal__footer { animation: sp-chunk-in var(--dur) var(--ease) 180ms both; }
+
+/* On the way out they leave together — a staggered exit reads as hesitation. */
+.modal__backdrop.is-leaving .modal__header,
+.modal__backdrop.is-leaving .modal__body,
+.modal__backdrop.is-leaving .modal__footer {
+  animation: none;
+}
+
+.modal--wide {
+  width: min(720px, 100%);
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  padding: var(--sp-3);
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.modal__title {
+  font-size: var(--fs-4);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--sp-3);
+  overflow-y: auto;
+  font-size: var(--fs-2);
+  line-height: var(--lh);
+  color: var(--text);
+}
+
+.modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  flex: none;
+  padding: var(--sp-3);
+  border-top: var(--border-w) solid var(--border);
+  background: var(--surface-2);
+}
+
+
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  flex: none;
+  border-bottom: var(--border-w) solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  height: 0;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  /* 44px: a tab is a navigation target, and this strip is the only way into
+     a settings section. The strip scrolls on its own axis, so a pseudo-element
+     skirt would be clipped by that scroller — the honest fix is the real height. */
+  height: var(--touch);
+  padding: 0 var(--sp-3);
+  margin-bottom: calc(var(--border-w) * -1);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.tab:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.tab[aria-selected="true"],
+.tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
+/* ==========================================================================
+   Option row — one line of a searchable list that is also a control
+   --------------------------------------------------------------------------
+   The symbol picker walks a table of well over a thousand instruments, so its
+   rows carry a real hover, a real press and a real selected state — and they
+   are `role="option"` buttons inside a `role="listbox"`, reached from the
+   search field with the arrow keys (roving tabindex, so the focus ring is the
+   browser's own and always visible).
+
+   Rows are flush neighbours inside a scroller, so the 40px hit area is the
+   real height rather than a pseudo-element skirt: a skirt would overlap the
+   row above and fire the wrong instrument.
+
+       <div class="scroll-y" role="listbox">
+         <button class="option option--on" role="option" aria-selected="true">…
+   ========================================================================== */
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-2);
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: var(--border-w) solid var(--border);
+  cursor: pointer;
+  /* The press shrinks toward the leading edge: a full-width row scaling from
+     its centre reads as the whole list twitching. Named properties only. */
+  transform-origin: left center;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.option:hover:not([aria-disabled="true"]) {
+  background: var(--surface-3);
+}
+
+.option:active:not([aria-disabled="true"]) {
+  transform: scale(0.96);
+}
+
+/* Chosen. The wash is the quiet carrier; the row also prints the word. */
+.option--on {
+  background: var(--accent-dim);
+}
+
+/*
+ * A row the broker will not trade. `aria-disabled`, never `disabled`: the
+ * keyboard must still be able to land on it and read WHY it cannot be picked.
+ */
+.option[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The last row's own rule would double up against the scroller's border. */
+.option:last-child {
+  border-bottom: 0;
+}
+
+.option__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.option__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.option__name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.option__desc,
+.option__sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.option__desc {
+  font-size: var(--fs-2);
+}
+
+.option__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-1);
+}
+
+/*
+ * Why a row cannot be picked. It WRAPS — a reason clipped by an ellipsis is not
+ * a reason — and it is --warn rather than --danger: the broker declining to
+ * trade an instrument is a fact about the instrument, not a fault of the
+ * operator's.
+ */
+.option__reason {
+  font-size: var(--fs-1);
+  line-height: var(--lh);
+  color: var(--warn);
+  white-space: normal;
+}
+
+/* The numbers a trader judges an instrument by. Right-aligned, never wrapping
+   mid-figure, tabular through .mono so nothing shifts as the list refreshes. */
+.option__nums {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  font-size: var(--fs-1);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.option__num {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+}
+
+.option__num > .mono {
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  /* Below this the numbers cannot share the line with the name without
+     truncating the description to nothing, so they take their own. */
+  .option {
+    flex-wrap: wrap;
+  }
+
+  .option__nums {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+
+/* ==========================================================================
+   Chip — one selected value, with the control that removes it
+   --------------------------------------------------------------------------
+   Concentric radii: a chip is --radius-sm inside a well padded by --sp-2, so
+   the well is calc(--radius-sm + --sp-2). The remove button is a .btn--sm and
+   brings its own 40px hit skirt.
+   ========================================================================== */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2);
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.chip__label {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * THE REMOVE CONTROL ANSWERS AT A TRUE 40 x 40.
+ *
+ * `.btn--sm` skirts the vertical axis only, because two buttons sharing a
+ * `.row--tight` sit 4px apart and a horizontal skirt would put one control's
+ * hit area on top of its neighbour's. Inside a chip that neighbour does not
+ * exist: the nearest other control is the NEXT chip's remove button, and
+ * between them lie this chip's right padding, two borders, the well's --sp-2
+ * gap and the whole of the next chip's label. So here the skirt goes on both
+ * axes — 24px painted, 40 x 40 answered — and nothing can be hit by mistake.
+ */
+.chip .btn--sm::after {
+  inset: -8px;
+}
+
+
+/* ==========================================================================
+   Icon swap — one glyph becoming another, never one disappearing
+   --------------------------------------------------------------------------
+   Both icons stay in the DOM and cross-fade in place: opacity, scale and a
+   little blur, on the house easing. A swap that unmounts one node and mounts
+   another cannot be animated at all, and it is the difference between a caret
+   that turns and a caret that blinks.
+
+       <span class="iconswap" aria-hidden="true">
+         <span class="iconswap__icon" data-shown="true">v</span>
+         <span class="iconswap__icon" data-shown="false">></span>
+       </span>
+   ========================================================================== */
+
+.iconswap {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.iconswap__icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    filter var(--dur) var(--ease);
+}
+
+.iconswap__icon[data-shown="false"] {
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+}
+
+.iconswap__icon[data-shown="true"] {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0);
+}
+
+
+/* ==========================================================================
+   Skeleton — a loading placeholder that breathes rather than shimmers
+   ========================================================================== */
+
+.skeleton {
+  display: block;
+  min-height: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  animation: sp-pulse 1.6s var(--ease) infinite;
+}
+
+.skeleton--text {
+  height: 12px;
+}
+
+.skeleton--row {
+  height: var(--row-h);
+  border-radius: 0;
+  border-bottom: var(--border-w) solid var(--border);
+}
+
+.skeleton--block {
+  height: 72px;
+  border-radius: var(--radius);
+}
+
+
+/* ==========================================================================
+   Empty state
+   ========================================================================== */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 96px;
+  padding: var(--sp-6) var(--sp-3);
+  text-align: center;
+  font-size: var(--fs-2);
+  color: var(--text-dim);
+}
+
+.empty__title {
+  font-size: var(--fs-3);
+  font-weight: 600;
+  color: var(--text);
+  /* A <p> by markup, a heading by role: it does not inherit the h1-h6 rule. */
+  text-wrap: balance;
+}
+
+.empty__text {
+  max-width: 42ch;
+  line-height: var(--lh);
+}
+
+
+/* ==========================================================================
+   Page layout — Cockpit (BUILD_PROMPT §9)
+   --------------------------------------------------------------------------
+   The one page-specific block in this file, and it earns its place: pages have
+   no stylesheet of their own, and a three-column instrument panel cannot be
+   expressed with inline styles because it needs a media query.
+
+   Three columns on desktop — signal feed, live reasoning, account and controls
+   — and one stacked column below the breakpoint, where the CONTROLS COME FIRST:
+   the switch you reach for in a hurry must not sit under two scrolling feeds.
+   Grid areas do the reordering, so the DOM keeps its reading order (feed, runs,
+   panel) for a screen reader while the eye gets the urgent thing first.
+
+   `--cockpit-h` is stamped on the element by the page, measured from the shell's
+   real chrome, so the columns end exactly at the viewport edge and each card
+   scrolls inside itself rather than pushing the page. The fallback here keeps
+   the layout sane if the measurement never runs (no JS layout pass yet).
+   ========================================================================== */
+
+.cockpit-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--sp-3);
+  padding-left: max(var(--sp-3), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--sp-3), env(safe-area-inset-right, 0px));
+}
+
+.cockpit {
+  --cockpit-h: calc(100dvh - 160px);
+  display: grid;
+  gap: var(--sp-5);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "panel"
+    "feed"
+    "runs";
+  align-items: start;
+}
+
+.cockpit__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+.cockpit__col--feed  { grid-area: feed; }
+.cockpit__col--runs  { grid-area: runs; }
+.cockpit__col--panel { grid-area: panel; }
+
+/* The two panel cards keep their natural height; the column scrolls, not them. */
+.cockpit__col--panel > * { flex: none; }
+
+/* Stacked, the feed and the reasoning column need a floor or they collapse to
+   their empty state and the page reads as broken. */
+.cockpit__col--feed,
+.cockpit__col--runs {
+  min-height: 320px;
+}
+
+/* The page wrapper is a `.col`, so its gap is the space under the strips; a
+   margin here would double it. `:empty` keeps that gap from opening at all on
+   the quiet day, which is most days. */
+.cockpit__banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cockpit__banners:empty {
+  display: none;
+}
+
+/* A strip, not a toast: it stays until the operator deals with it (§9).
+   Flat on purpose — a left rule, not another boxed card. */
+.cockpit__strip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+  font-size: var(--fs-2);
+  line-height: var(--lh);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid var(--warn);
+  border-radius: 0;
+}
+
+.cockpit__strip--info { border-left-color: var(--accent); }
+.cockpit__strip--bad  { border-left-color: var(--short); }
+
+/*
+ * A strip arrives in the order it is read — what happened, then the sentence,
+ * then the time and the way out — 90ms apart. The strip's own box does not
+ * move: it is pushing the whole cockpit down as it appears, and a box that
+ * both pushes and slides reads as a stumble.
+ */
+.cockpit__strip > * {
+  animation: sp-chunk-in var(--dur) var(--ease) both;
+}
+
+.cockpit__strip > :nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.cockpit__strip > :nth-child(n + 3) {
+  animation-delay: 180ms;
+}
+
+/*
+ * The dismissal. Softer and shorter than the arrival: one fixed 4px of travel
+ * for the whole strip, no collapse — the row keeps its height until it is
+ * gone, so the strips under it do not start moving while the eye is still on
+ * the one being dismissed.
+ */
+.cockpit__strip.is-leaving {
+  pointer-events: none;
+  animation: sp-chunk-out var(--dur-fast) var(--ease) both;
+}
+
+.cockpit__strip.is-leaving > * {
+  animation: none;
+}
+
+.cockpit__strip-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-top: 1px;
+}
+
+.cockpit__strip-time {
+  flex: none;
+  color: var(--text-dim);
+}
+
+@media (min-width: 1080px) {
+  .cockpit {
+    grid-template-columns:
+      minmax(260px, 0.95fr)
+      minmax(360px, 1.7fr)
+      minmax(280px, 0.95fr);
+    grid-template-areas: "feed runs panel";
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .cockpit__col {
+    max-height: var(--cockpit-h);
+    min-height: 320px;
+    padding: 0 var(--sp-4);
+  }
+
+  .cockpit__col--feed {
+    padding-left: 0;
+  }
+
+  .cockpit__col--runs {
+    border-left: var(--border-w) solid var(--border);
+    border-right: var(--border-w) solid var(--border);
+  }
+
+  .cockpit__col--panel {
+    padding-right: 0;
+    overflow-y: auto;
+  }
+}
+
+
+/* ==========================================================================
+   Keyframes — every one of these is neutralised by the reduced-motion block in
+   base.css, and each rests on its final frame so the static state is correct.
+   ========================================================================== */
+
+@keyframes sp-pulse {
+  0%,
+  100% { opacity: 1; }
+  50%  { opacity: 0.45; }
+}
+
+@keyframes sp-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes sp-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* The shared enter for one chunk of a thing that is assembling itself: a card
+   that just arrived in the feed, a tool the model just called, one region of a
+   dialog. 4px, because the eye should register order, not travel. */
+@keyframes sp-chunk-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Exits are shorter than enters and never collapse a height: the row keeps its
+   box and slides a fixed 4px while it fades, so nothing below it jumps. */
+@keyframes sp-chunk-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes sp-modal-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes sp-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+
+/* ==========================================================================
+   Settings tabs — sticky under the shell header, one section at a time
+   ========================================================================== */
+
+.settings-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  margin-inline: calc(var(--sp-1) * -1);
+  padding-inline: var(--sp-1);
+}
+
+.picker-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.picker-toolbar .field {
+  flex: 1 1 auto;
+  min-width: min(16rem, 100%);
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+/* ==========================================================================
+   Page padding — Positions, History, Settings
+   ========================================================================== */
+
+.page {
+  padding: var(--sp-4);
+  padding-left: max(var(--sp-4), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--sp-4), env(safe-area-inset-right, 0px));
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Phone / coarse pointer — 44px targets, no horizontal overflow
+   ========================================================================== */
+
+@media (max-width: 880px), (pointer: coarse) {
+  .btn {
+    min-height: var(--touch);
+    height: var(--touch);
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .btn--sm {
+    min-height: var(--touch);
+    height: var(--touch);
+  }
+
+  .btn::after,
+  .btn--sm::after {
+    inset: 0;
+  }
+
+  .field input:not([type="checkbox"]):not([type="radio"]),
+  .field select,
+  .field__control {
+    min-height: var(--touch);
+    height: var(--touch);
+  }
+
+  .field textarea,
+  textarea.field__control {
+    min-height: calc(var(--touch) * 2);
+    height: auto;
+  }
+
+  .table thead th,
+  .table tbody td {
+    height: var(--touch);
+  }
+
+  .table .btn,
+  .table .btn--sm {
+    min-height: calc(var(--touch) - 8px);
+    height: calc(var(--touch) - 8px);
+  }
+
+  .card__header {
+    min-height: var(--touch);
+  }
+
+  .option {
+    min-height: var(--touch);
+  }
+
+  .switch {
+    min-height: var(--touch);
+  }
+}
+
+@media (max-width: 880px) {
+  .page {
+    padding: var(--sp-3);
+    padding-left: max(var(--sp-3), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--sp-3), env(safe-area-inset-right, 0px));
+  }
+
+  .card__title {
+    white-space: normal;
+  }
+
+  .card__actions {
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .field--row input:not([type="checkbox"]):not([type="radio"]),
+  .field--row select,
+  .field--row .field__control {
+    width: 100%;
+  }
+
+  .picker-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .picker-toolbar .field {
+    flex: none;
+  }
+}
+
+/* ==========================================================================
+   Reduced motion
+   --------------------------------------------------------------------------
+   base.css already collapses every duration and delay to 1ms, which settles
+   the enters, the exits and the cross-fades on their final frame. What a
+   duration cannot neutralise is a TRANSFORM that is applied by a state rather
+   than by a timeline: a press that snaps 4% smaller with no tween is still
+   motion, and a cross-fade that jumps between two scales is still a jump. So
+   the transforms and the blur are switched off outright — the state is still
+   carried, by colour, by the word and by opacity.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled),
+  .tab:active:not(:disabled),
+  .option:active:not([aria-disabled="true"]),
+  .iconlink:active,
+  .switch:active:not(:disabled) .switch__track {
+    transform: none;
+  }
+
+  .iconswap__icon[data-shown="false"],
+  .iconswap__icon[data-shown="true"] {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* A non-agent run must not read as one. The whole product is a record of what the AI
+   decided, so "a human did this" is the one label that has to survive a glance. */
+.sp-run__origin {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: var(--fs-1);
+}

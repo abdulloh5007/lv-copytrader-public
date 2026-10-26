@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------------------
+# LV Copytrader backend — packaging and test configuration.
+#
+# The import root is this directory (``backend/``), so every module is ``app.<pkg>.<mod>``
+# and every import in the codebase is absolute. Only the ``app`` package is distributed;
+# ``tests`` stays out of the wheel but is importable during a test run (see pythonpath).
+#
+# The MetaTrader5 package is deliberately absent: it is Windows-only, has no Linux wheel,
+# and the backend never imports it (BUILD_PROMPT §1.2). Every MT5 integer the backend needs
+# lives in app/trading/constants.py and every MT5 call goes over JSON-RPC to the sidecar.
+# ---------------------------------------------------------------------------------------
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lv-copytrader-backend"
+version = "0.1.0"
+description = "LV Copytrader backend: an LLM trader that reads a Telegram signal channel and drives MetaTrader 5."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]",
+    "aiosqlite",
+    "pydantic-settings",
+    "telethon",
+    "httpx",
+    "cryptography",
+    "pillow",
+    "anthropic>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+# ---------------------------------------------------------------------------------------
+# Pytest lives here rather than in a pytest.ini: a pytest.ini would take precedence over
+# this table and silently disable asyncio_mode, so there is exactly one place to edit.
+# ``asyncio_mode = "auto"`` means an ``async def test_*`` needs no decorator; the verification
+# harness (CONTRACTS.md §21) runs entirely in-process against FakeSidecar — no network, no MT5.
+# ---------------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]

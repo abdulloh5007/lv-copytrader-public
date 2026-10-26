@@ -1,0 +1,101 @@
+.sp-app {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Anchors inside the shell that are dressed as buttons keep the button's manners. */
+.sp-app a.btn:hover {
+  text-decoration: none;
+}
+
+/* ---- skip link -------------------------------------------------------- */
+
+.sp-app__skip {
+  position: fixed;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 60;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-2);
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  border: var(--border-w) solid var(--accent);
+  border-radius: var(--radius-sm);
+  transform: translateY(-300%);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.sp-app__skip:hover {
+  text-decoration: none;
+}
+
+.sp-app__skip:focus,
+.sp-app__skip:focus-visible {
+  transform: translateY(0);
+}
+
+/* ---- needs_reentry banner --------------------------------------------- */
+
+.sp-app__banner {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-2);
+  color: var(--text);
+  background: transparent;
+  border-bottom: var(--border-w) solid var(--border);
+  border-left: 3px solid var(--warn);
+}
+
+.sp-app__banner-dot {
+  flex: none;
+}
+
+.sp-app__banner-text {
+  flex: 1 1 320px;
+  min-width: 0;
+  line-height: var(--lh);
+}
+
+.sp-app__banner-action {
+  flex: none;
+}
+
+/* ---- the routed region ------------------------------------------------ */
+
+.sp-app__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.sp-app__crash {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6) var(--sp-4);
+}
+
+.sp-app__crash .empty {
+  max-width: 520px;
+}
+
+.sp-app__crash-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: center;
+  margin-top: var(--sp-2);
+}

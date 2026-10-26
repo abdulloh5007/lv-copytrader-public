@@ -1,0 +1,32 @@
+; LV Copytrader — MetaTrader 5 startup configuration, placeholders only.
+;
+; entrypoint.sh substitutes the three ${...} values from the environment and converts the
+; result to UTF-16LE before writing it to C:/MT5/common.ini inside the Wine prefix: MT5
+; reads a UTF-8 ini unreliably. The terminal is then started with
+;   terminal64.exe /portable /config:C:/MT5/common.ini
+; because MetaQuotes documents exactly four command-line keys — /login:, /config:, /profile:
+; and /portable. There is no /password: and no /server: switch; both live in [Common] below.
+;
+; This file is a template that is never filled in on disk in the repo: the rendered copy
+; carries the account password and lives only inside the container's /config volume.
+
+[Common]
+Login=${MT5_LOGIN}
+Password=${MT5_PASSWORD}
+Server=${MT5_SERVER}
+KeepPrivate=1
+NewsEnable=0
+
+; Account=0 and Profile=0 are load-bearing. They mean "do NOT disable algo trading when the
+; account or the profile changes". At their defaults, switching accounts silently kills
+; automated trading and every order_send comes back TRADE_RETCODE_CLIENT_DISABLES_AT (10027)
+; with nothing wrong in the calling code. AllowLiveTrading=1 and Enabled=1 turn algo trading
+; on in the first place. That is not enough on Exness builds: the toolbar Algo Trading
+; toggle must also be on, and rpc_server.py sends Ctrl+E (via xdotool on DISPLAY=:99)
+; after initialize() when terminal_info().trade_allowed is still false. This file MUST
+; stay UTF-16LE — a UTF-8 write makes MT5 ignore the whole [Experts] section.
+[Experts]
+AllowLiveTrading=1
+Enabled=1
+Account=0
+Profile=0

@@ -1,0 +1,74 @@
+# Build context hygiene: keep secrets, build output and local state out of every image
+# layer. The context is the repository root (docker-compose.yml sets `context: .`), so this
+# file covers both the frontend build stage and the backend runtime stage.
+
+# --- secrets: never copied into an image; they arrive at runtime through env_file ---
+.env
+.env.*
+
+# --- vcs and tooling ---
+.git
+.gitignore
+.dockerignore
+
+# --- python ---
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# --- frontend: dependencies and build output are produced inside the image ---
+node_modules
+frontend/node_modules
+frontend/dist
+.vite
+*.tsbuildinfo
+
+# --- runtime state ---
+data
+backend/data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.session
+*.session-journal
+
+# --- not needed by any build stage ---
+docs
+mt5-sidecar/.wine
+mt5-sidecar/config
+mt5-sidecar/*.exe
+
+# --- os and editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea
+.vscode
+
+# Deployment snapshots and credentials must never enter source or images.
+backups/
+runtime-state/
+*.bak
+*.bak-*
+*.bak*
+TUNNEL_URL
+artifacts/
+
+# Private deployment credentials and runtime preparation output.
+secrets/
+deploy-runtime/
+migration-static/
+
+# Publishing and owner snapshot tooling never belongs in runtime images.
+release/
+.githooks/
+.release-work/

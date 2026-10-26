@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/FEX /usr/local/libexec/wineserver.real "$@"
