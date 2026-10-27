@@ -1,0 +1,21 @@
+/* Approved LV Copy Trader artwork: the raster sources stay unchanged. */
+.lv-symbol{position:relative;display:block;flex-shrink:0;width:60px;height:32px;overflow:hidden;isolation:isolate;mix-blend-mode:screen}
+.lv-symbol>img{position:absolute;display:block;left:50%;top:50%;width:116%;height:auto;max-width:none;transform:translate(-50%,-47.2%);border:0;border-radius:0;background:none;box-shadow:none;object-fit:contain}
+.lv-wordmark{position:relative;display:block;width:320px;max-width:100%;aspect-ratio:6/1;margin-inline:auto;overflow:hidden;mix-blend-mode:screen}
+.lv-wordmark>img{position:absolute;display:block;left:0;top:50%;width:100%;height:auto;max-width:none;transform:translateY(-50%);object-fit:contain}
+#watch-orbit .watch-core>.lv-symbol{width:102px;height:55px;margin:0 0 12px}
+#watch-orbit .watch-core>strong{font:500 20px/1.2 "IBM Plex Mono",monospace;letter-spacing:.04em;color:#c4d8f0}
+#watch-orbit .watch-core>span{margin-top:12px}
+#solution-scene .solution-core .lv-symbol{width:58px;height:32px}
+.bot-port .lv-symbol{width:31px;height:18px}
+.bot-port .port-icon:has(.lv-symbol){display:grid;place-items:center}
+#solution-scene .solution-brand,#outro-scene .outro-brand{width:100%}
+#start h1.start-brand{width:100%;margin-inline:auto}
+#start .lv-wordmark{width:310px}
+
+.lv-brand-filters{position:absolute;pointer-events:none;overflow:hidden}
+.lv-symbol>img,.lv-wordmark>img{filter:url(#lv-clear-matte)}
+
+#watch-orbit .watch-core>.lv-symbol{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0}
+#watch-orbit .watch-core>strong{position:absolute;left:50%;top:calc(50% + 41px);transform:translateX(-50%)}
+#watch-orbit .watch-core>span{position:absolute;left:50%;top:calc(50% + 74px);transform:translateX(-50%);margin:0;white-space:nowrap}

@@ -1,0 +1,19 @@
+.market-result{position:fixed;z-index:14;left:50%;bottom:calc(72px + env(safe-area-inset-bottom,0px));width:min(440px,86vw);padding:19px 22px;border:1px solid #a5dfbe38;border-radius:23px;background:linear-gradient(145deg,#19262af7,#0c1519fa);box-shadow:0 16px 44px #0005,inset 0 1px 0 #ffffff0a;display:flex;align-items:center;justify-content:space-between;gap:16px;opacity:0;pointer-events:none;text-align:left;color:#b7e8cd;font-family:Manrope,Inter,sans-serif;will-change:opacity,transform}
+.market-result small{display:block;font:500 8px/1.4 Inter,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#8cb39f}
+.market-result strong{display:block;font-size:19px;font-weight:600;line-height:1.4;margin-top:3px}
+.market-result .result-detail{display:block;font-size:7px;color:#8a9f99;margin-top:5px}
+.market-result .result-amount{font:500 27px/1.2 'IBM Plex Mono',monospace;white-space:nowrap;letter-spacing:-.04em}
+.market-result.loss{border-color:#ed9f9b38;background:linear-gradient(145deg,#2a1d25f7,#170e16fa);color:#edb1ae}.market-result.loss small{color:#b68d8b}.market-result.loss .result-detail{color:#aa9296}
+#viewport>.market-result{bottom:calc(68px + env(safe-area-inset-bottom,0px));max-width:380px}
+#viewport:has(#player-panel:not([hidden]))>.market-result{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+@media(max-width:760px){.market-result{padding:16px 18px}.market-result strong{font-size:17px}.market-result .result-amount{font-size:23px}.market-result .result-detail{font-size:6px}}
+@media(max-height:740px){#viewport>.market-result{bottom:calc(24px + env(safe-area-inset-bottom,0px))}#viewport:has(#player-panel:not([hidden]))>.market-result{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.market-result{will-change:auto}}
+
+.market-notice{position:fixed;z-index:14;left:50%;bottom:calc(72px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(440px,86vw);display:flex;align-items:flex-end;gap:10px;opacity:0;pointer-events:none;text-align:left;font-family:Manrope,Inter,sans-serif}
+.notice-avatar{width:40px;height:40px;flex:0 0 40px;will-change:opacity,transform}
+.notice-bubble{position:relative;flex:1;min-width:0;padding:16px 20px;border-radius:20px 20px 20px 5px;background:linear-gradient(145deg,#1c2a3af5,#111b28fa);border:1px solid #99cfff30;box-shadow:0 12px 36px #0005;transform-origin:0 100%;will-change:opacity,transform;color:#edf5ff}
+.notice-bubble small{display:block;font-size:9px;line-height:1.5;color:#88c8ff;font-weight:600}.notice-bubble strong{display:block;font-size:18px;line-height:1.5;font-weight:600;margin-top:2px}.notice-bubble span{display:block;font:500 9px/1.6 'IBM Plex Mono',monospace;color:#9baec1;margin-top:3px}
+#viewport>.market-notice{max-width:380px;bottom:calc(68px + env(safe-area-inset-bottom,0px))}#viewport:has(#player-panel:not([hidden]))>.market-notice{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+@media(max-height:740px){#viewport>.market-notice{bottom:calc(24px + env(safe-area-inset-bottom,0px))}#viewport:has(#player-panel:not([hidden]))>.market-notice{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.notice-avatar,.notice-bubble{will-change:auto}}

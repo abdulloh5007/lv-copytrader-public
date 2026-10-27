@@ -1,0 +1,14 @@
+{
+  "source": "Approved LV Copy Trader brand-v1 assets from the previous session",
+  "files": {
+    "logo.png": "dbffacd0e1aa881c73e1feb2d6220b253390513c52bc2383ba592cb547697afd",
+    "icon.png": "3a7a170fe8060085e07ffbbd39b9928af5da0bb5ae20a9efc08e5be3851ec95a",
+    "mini.png": "7c0bbe36aa275b4d27d4bfa0f89b031f7c29f3083f1a7dda128eeaa49283820c"
+  },
+  "use": {
+    "logo.png": "solution, closing and film start wordmarks",
+    "icon.png": "center of the 24/7 scene, favicon and touch icon",
+    "mini.png": "LV Copy Trader nodes; generic AI recognition remains separate"
+  },
+  "rendering": "Original PNGs preserved; CSS composition and inline lv-clear-matte SVG filter remove the dark matte at display time."
+}

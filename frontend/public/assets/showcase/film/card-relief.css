@@ -1,0 +1,45 @@
+/* A permanent local 3D scene: opacity/entrance wrappers never change its projection. */
+.relief-host{display:block!important;padding:0!important;transform-style:flat!important;perspective:none!important;background:transparent!important;box-shadow:none!important;border-color:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;overflow:visible}
+.relief-rig{position:relative;box-sizing:border-box;width:100%;height:100%;border-radius:inherit;transform-style:preserve-3d;transform-origin:50% 50%;will-change:transform;transition:none!important}
+.relief-surface{position:absolute;inset:-1px;border-radius:inherit;border:1px solid #ffffff22;background:linear-gradient(145deg,#232831f5,#0d1118fa);box-shadow:inset 0 1px 0 #ffffff12,0 16px 36px #0004;pointer-events:none;transform:translateZ(-16px)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.relief-surface:before{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(ellipse at var(--light-x,50%) var(--light-y,40%),#accfff15,transparent 65%)}
+.relief-rig>[data-depth],.relief-rig>[data-film-depth]{transform-style:flat;backface-visibility:hidden;text-shadow:0 1px 3px #0003}
+/* One soft light follows the actual surface border, on the same depth plane. */
+.relief-trace{position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;background:conic-gradient(from var(--trace-angle,0deg),transparent 0deg,transparent 282deg,#69afff08 300deg,#8bc5ff55 322deg,#c3e4ffc9 342deg,transparent 347deg,transparent 360deg);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude}
+/* Existing authored layout rules keep applying inside the local scene. */
+.depth-card.delay-stat>.relief-rig>span{font-size:9px;color:#8d9db2;display:block}
+.depth-card.delay-stat>.relief-rig>strong{display:block;font:500 27px var(--mono);color:#ffd18b;margin-top:6px;letter-spacing:-.03em}
+.depth-card.delay-stat:last-child>.relief-rig>strong{color:#f0b4ad}
+.depth-card.delay-stat>.relief-rig>img{position:absolute;right:22px;top:22px;width:16px;opacity:.45}
+.route-node>.relief-rig>small{position:absolute;right:20px;top:15px;font:7px var(--mono);color:#485c75}
+.parser-card>.relief-rig>p{font-size:12px;line-height:1.6;color:#8f9aaa;margin-top:16px}
+.feature-card>.relief-rig>p{font-size:11px;color:#8e9bae;margin-top:7px}
+
+.parser-card>.relief-rig>.relief-surface{background:linear-gradient(145deg,#252b35fa,#0e141cfb)}
+.parser-cards,.film-cube-viewport{transform-style:flat!important}
+.parser-card,.film-cube-face{transform-style:flat!important;height:var(--face-height,100%);top:calc((100% - var(--face-height,100%))/2)!important;bottom:auto!important}
+.film-depth.deal>.relief-rig>.relief-surface{background:linear-gradient(#fff,#e5e9f0);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 6px 24px #0004}
+.film-depth.deal>.relief-rig>[data-film-depth]{color:#121922;text-shadow:none}
+#signal-card.film-depth>.relief-rig>.relief-surface,#elapsed-card.film-depth>.relief-rig>.relief-surface,#current-card.film-depth>.relief-rig>.relief-surface{opacity:calc(1 - var(--inspect))}
+@media(max-width:760px){.parser-card>.relief-rig>p{font-size:11px;margin-top:14px}.feature-card>.relief-rig>p{font-size:8px;margin-top:6px}.depth-card.delay-stat>.relief-rig>strong{font-size:20px}.depth-card.delay-stat>.relief-rig>span{font-size:7px}.depth-card.delay-stat>.relief-rig>img{width:13px;top:16px;right:16px}}
+@media(max-width:760px) and (max-height:740px){.parser-card>.relief-rig>p{font-size:10px;margin-top:12px}.feature-card>.relief-rig>p{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.relief-rig{transform:perspective(920px) rotateX(0deg) rotateY(0deg)!important;will-change:auto}.relief-trace{display:none}}
+.flow .node.relief-host:after{display:none}
+.flow .node>.relief-rig:after{content:'✓';position:absolute;right:15px;top:50%;color:#a8d8ff;font-size:14px;opacity:var(--complete,0);transform:translateY(-50%) scale(calc(.6 + var(--complete,0)*.4));pointer-events:none}
+/* Each content group is one stable plane. Icon children never create another 3D scene. */
+.relief-rig .node-icon,.relief-rig .ico{display:flex;align-items:center;justify-content:center;transform-style:flat}
+.relief-rig .node-icon>img,.relief-rig .ico>svg,.relief-rig .ch>.ico{transform:none!important;translate:none!important;filter:none!important;backface-visibility:visible}
+
+/* Activation lives on the permanent card surface, preserving content depth. */
+.flow .node .relief-surface,.route-node .relief-surface{border-color:rgba(148,205,255,calc(.13 + var(--route-active,0)*.17 + var(--route-flash,0)*.32));box-shadow:inset 0 1px 0 #ffffff12,0 16px 36px #0004,0 0 24px rgba(82,168,255,calc(var(--route-flash,0)*.16))}
+.flow .node .relief-surface:after,.route-node .relief-surface:after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(ellipse at 12% 50%,#75beff30,transparent 72%);opacity:var(--route-flash,0)}
+.flow .node .ico,.route-node .node-icon{opacity:calc(.55 + var(--route-active,0)*.45)}
+/* Icon holders reserve layout space; the glyph stands on its own. */
+.flow .ico,.film-cube-face .ico,.grid .ico,.route-node .node-icon,.card-heading .node-icon,.feature-card .node-icon{border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important}
+.ico.solid-icon img{display:block;width:28px;height:28px;object-fit:contain}.film-cube-face .ico.solid-icon img{width:29px;height:29px}
+.route-node .node-icon img,.card-heading .node-icon img,.feature-card .node-icon img{width:28px;height:28px;object-fit:contain}
+@media(max-width:760px){.route-node .node-icon img,.card-heading .node-icon img,.feature-card .node-icon img{width:25px;height:25px}.route-node .node-icon.brand-icon img{width:32px;height:32px}}
+
+/* Swing the bell glyph on its own plane, keeping the card and label anchored. */
+.flow .node:last-child .ico img,.route-node:last-child .node-icon img{transform-origin:50% 15%;will-change:rotate}
+@media(prefers-reduced-motion:reduce){.flow .node:last-child .ico img,.route-node:last-child .node-icon img{rotate:none!important;will-change:auto}}

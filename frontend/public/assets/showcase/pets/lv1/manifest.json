@@ -1,0 +1,39 @@
+{
+  "format": "lv1-browser-v2",
+  "cell": [
+    192,
+    208
+  ],
+  "columns": 4,
+  "rows": 8,
+  "states": [
+    "idle",
+    "walk",
+    "wave",
+    "work",
+    "sleep",
+    "money",
+    "happy",
+    "annoyed"
+  ],
+  "workOutcome": {
+    "TP": 0.7,
+    "SL": 0.3
+  },
+  "source": "built-in image_gen; original transparent artwork",
+  "animation": "Main actions use original four-frame rows. Walking uses continuous articulated joints driven by distance.",
+  "walking": {
+    "renderer": "lv1-walk-rig.js",
+    "artwork": "walk-rig-pose.png",
+    "phaseOffset": 0.5,
+    "cycleDistance": "0.3 × displayed cell width",
+    "animation": "two-bone inverse kinematics; alternating planted and swing legs; arm counter-swing",
+    "left": "same rig mirrored"
+  },
+  "activities": {
+    "renderer": "lv1-action-rig.js",
+    "animation": "continuous arm joints, head tilt, breathing, eye expressions and typing; smoothly interpolated activity transitions",
+    "moneyRelease": "one release every 1.6 seconds, from the animated throwing hand",
+    "resultBubble": "TP/SL and signed amount; no Demo prefix"
+  }
+}

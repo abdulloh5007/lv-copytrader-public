@@ -1,4 +1,8 @@
+<p><img src="frontend/public/assets/brand/logo.png" alt="LV Copy Trader" width="420" /></p>
+
 # LV Copytrader
+
+[Official website](https://lvenc.site) · [Product film](https://lvenc.site/assets/showcase/film/index.html) · [Interactive story](https://lvenc.site/assets/showcase/ru/index.html)
 
 **Telegram signals → AI interpretation → MetaTrader 5 execution.**
 

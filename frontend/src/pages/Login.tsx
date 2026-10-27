@@ -78,7 +78,7 @@ export function Login({ onAuthenticated }: LoginProps) {
     <PublicLayout login>
       <section className="auth-card" aria-labelledby={`${id}-title`}>
         <div className="auth-card__intro">
-          <BrandMark />
+          <BrandMark variant="icon" />
           <h1 id={`${id}-title`}>{t('login.heading')}</h1>
           <p>{t('login.subheading')}</p>
         </div>

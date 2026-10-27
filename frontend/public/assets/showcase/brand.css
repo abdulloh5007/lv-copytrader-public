@@ -1,0 +1,21 @@
+/* Original approved bitmap logos, composed with CSS to preserve their artwork. */
+.lv-symbol{position:relative;display:block;flex-shrink:0;width:72px;height:38px;overflow:hidden;isolation:isolate;mix-blend-mode:screen}
+.lv-symbol>img{position:absolute;display:block;left:50%;top:50%;width:116%;height:auto;max-width:none;transform:translate(-50%,-47.2%);border:0;border-radius:0;background:none;box-shadow:none;object-fit:contain}
+.lv-wordmark{position:relative;display:block;width:min(440px,82vw);aspect-ratio:6/1;margin-inline:auto;overflow:hidden;mix-blend-mode:screen}
+.lv-wordmark>img{position:absolute;display:block;left:0;top:50%;width:100%;height:auto;max-width:none;transform:translateY(-50%);object-fit:contain}
+.core-orb .lv-symbol{width:78px;height:42px}
+.network-port .lv-symbol{width:44px;height:25px}
+.network-port .port-logo:has(.lv-symbol){display:grid;place-items:center}
+.finish-integrations>.lv-mini-icon{object-fit:contain;mix-blend-mode:screen}
+.watch-center>.lv-symbol{width:112px;height:60px;margin:0 0 12px}
+.watch-center>strong{font:500 21px/1.2 var(--mono);letter-spacing:.04em;color:#c4d8f0}
+.watch-center>span{margin-top:13px}
+.finish-brand .lv-wordmark{width:min(460px,82vw)}
+@media(max-width:600px){.watch-center>.lv-symbol{width:100px;height:54px}.watch-center>strong{font-size:19px}.lv-wordmark{width:min(360px,84vw)}.finish-brand .lv-wordmark{width:min(360px,84vw)}}
+
+.lv-brand-filters{position:absolute;pointer-events:none;overflow:hidden}
+.lv-symbol>img,.lv-wordmark>img{filter:url(#lv-clear-matte)}
+
+.watch-center>.lv-symbol{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0}
+.watch-center>strong{position:absolute;left:50%;top:calc(50% + 41px);transform:translateX(-50%)}
+.watch-center>span{position:absolute;left:50%;top:calc(50% + 74px);transform:translateX(-50%);margin:0;white-space:nowrap}

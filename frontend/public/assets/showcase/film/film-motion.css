@@ -1,0 +1,29 @@
+/* The same contained, shallow relief as the scroll website. */
+.s,.hk,.flow,.grid{perspective:1100px;transform-style:preserve-3d}
+.film-depth{position:relative;background:transparent!important;box-shadow:none!important;border-color:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;transform-style:preserve-3d;isolation:auto!important;overflow:visible}
+.film-depth>.film-surface{position:absolute;inset:-1px;z-index:-1;pointer-events:none;border:1px solid #ffffff21;border-radius:inherit;background:linear-gradient(155deg,#1f2229f5,#0d0f14fa);box-shadow:inset 0 1px 0 #ffffff10,0 12px 28px #0004;transform:translateZ(-2px)}
+.film-surface:before{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(ellipse at var(--light-x,50%) var(--light-y,35%),#accfff15,transparent 65%)}
+.film-depth>[data-film-depth]{transform-style:preserve-3d;backface-visibility:hidden;text-shadow:0 1px 3px #0003}
+.film-depth>.ico svg,.film-depth .ch>.ico{transform:translateZ(3px)}
+.film-depth.deal{color:#121922!important}.film-depth.deal>.film-surface{background:linear-gradient(#fff,#e5e9f0);border-color:#fff;box-shadow:inset 0 1px 0 #fff,0 6px 24px #0004}.film-depth.deal>[data-film-depth]{text-shadow:none}
+.film-depth.node>.film-surface{border-color:rgba(117,188,255,calc(.13 + var(--hot,0)*.4));box-shadow:inset 0 1px 0 #ffffff10,0 0 25px rgba(82,168,255,calc(var(--hot,0)*.11))}
+#signal-card.film-depth:before,#elapsed-card.film-depth:before,#current-card.film-depth:before{display:none}
+#signal-card.film-depth>.film-surface,#elapsed-card.film-depth>.film-surface,#current-card.film-depth>.film-surface{opacity:calc(1 - var(--inspect))}
+#bot-confirm.film-depth>.film-surface{inset:-10px -13px;border-radius:23px;background:linear-gradient(155deg,#18242cf2,#10171ff7);border-color:#9de2bb26}
+/* Adjacent faces share one 90-degree turn at the authored template cue. */
+#parser-scene{inset:0;display:block}
+#parser-scene>h2{position:absolute;top:100px;left:44px;right:44px;font-size:24px;line-height:1.23}
+.film-cube-viewport{position:absolute;top:183px;left:44px;right:44px;height:344px;perspective:1100px;perspective-origin:50% 48%;transform-style:preserve-3d}
+.film-cube{width:100%;height:100%;position:relative;transform-style:preserve-3d;--cube-width:344px}
+.film-cube-face{position:absolute!important;inset:0;width:100%;height:100%;padding:16px!important;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform-style:preserve-3d}
+.film-cube-ai{transform:translateZ(calc(var(--cube-width)/2))}
+.film-cube-template{transform:rotateY(90deg) translateZ(calc(var(--cube-width)/2))}
+.film-cube-face .ch{gap:10px;margin-bottom:8px;justify-content:flex-start}.film-cube-face .ch>.ico{width:28px;height:28px}.film-cube-face h3{font-size:17px}.film-cube-face p{font-size:11.5px;line-height:1.45;text-align:left}
+.film-cube-face .feed{margin-top:10px;gap:4px}.film-cube-face .feed>div{font-size:9.5px;line-height:1.4;padding:5px 9px;min-height:26px}
+.film-cube-face .parse-result{justify-content:flex-start;margin-top:10px;font-size:7px;gap:5px}.film-cube-face .parse-result>span{padding:5px}.film-cube-face .parse-status{text-align:left;font-size:8px;line-height:1.4;margin-top:7px}
+.film-cube-template .feed{margin-top:30px;gap:12px}.film-cube-template .feed>div{padding:15px 10px;font-size:11px}
+@media(prefers-reduced-motion:reduce){.film-depth,.film-cube,#watch-orbit{rotate:none!important;translate:none!important}.film-cube,.film-cube-face{transform:none!important}.film-depth>[data-film-depth]{translate:none!important}}
+.film-cube-face .ch>.ico{width:34px;height:34px}.film-cube-face h3{font-size:18px}.film-cube-face p{font-size:13px;line-height:1.5}
+.film-cube-face .feed{margin-top:14px;gap:6px}.film-cube-face .feed>div{font-size:10px;min-height:32px;padding:8px 9px}
+.film-cube-face .parse-result{margin-top:12px;font-size:8px}.film-cube-face .parse-result>span{padding:6px}.film-cube-face .parse-status{margin-top:10px;font-size:9px}
+.film-cube-template .feed{margin-top:30px;gap:12px}.film-cube-template .feed>div{padding:15px 10px;font-size:11px}

@@ -1,0 +1,58 @@
+{
+  "format": "lumi-browser-v1",
+  "cell": [
+    192,
+    208
+  ],
+  "columns": 8,
+  "rows": 8,
+  "chroma": "#FF00FF",
+  "states": {
+    "idle": {
+      "row": 0,
+      "frames": 6,
+      "baselineTranslation": 0
+    },
+    "running-right": {
+      "row": 1,
+      "frames": 8,
+      "baselineTranslation": 2
+    },
+    "running-left": {
+      "row": 2,
+      "frames": 8,
+      "baselineTranslation": 2
+    },
+    "waving": {
+      "row": 3,
+      "frames": 4,
+      "baselineTranslation": 0
+    },
+    "jumping": {
+      "row": 4,
+      "frames": 5,
+      "baselineTranslation": 0
+    },
+    "working": {
+      "row": 5,
+      "frames": 6,
+      "baselineTranslation": 5
+    },
+    "sleeping": {
+      "row": 6,
+      "frames": 6,
+      "baselineTranslation": 30
+    },
+    "celebrating": {
+      "row": 7,
+      "frames": 6,
+      "baselineTranslation": 0
+    }
+  },
+  "source": "built-in image_gen; generated artwork, no procedural character drawing",
+  "mirrored": "running-left derived framewise from approved running-right; identical unmarked scarf, no handed props",
+  "credits": {
+    "artwork": "Original Lumi, generated with built-in image_gen",
+    "particles": "Phosphor Icons money-fill, MIT; https://github.com/phosphor-icons/core"
+  }
+}

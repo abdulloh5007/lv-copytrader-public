@@ -190,8 +190,11 @@ function AppShell(props: { auth: AuthGate }): ReactElement {
 
 function ProtectedApp(): ReactElement | null {
   const auth = useAuthGate();
+  const location = useLocation();
 
   if (auth.phase === 'unknown') return null;
+  if (auth.phase === 'locked' && location.pathname === '/')
+    return <Navigate to="/waitlist" replace />;
   if (auth.phase === 'locked') return <Login onAuthenticated={auth.refresh} />;
   return <AppShell auth={auth} />;
 }

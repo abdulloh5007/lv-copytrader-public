@@ -4,15 +4,18 @@ import { Link } from 'react-router-dom';
 import { Icon } from '@/components/Icon';
 import { PublicLayout } from '@/components/PublicLayout';
 import { joinWaitlist, SignupError } from '@/features/waitlist/api';
-import { useT } from '@/i18n';
+import { useT, useLocale } from '@/i18n';
 
 export default function Waitlist() {
   const t = useT();
+  const { locale } = useLocale();
   const id = useId();
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
   const [phase, setPhase] = useState<'idle' | 'busy' | 'success'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [invalidEmail, setInvalidEmail] = useState(false);
+  const errorMessage = useRef<HTMLParagraphElement>(null);
   const controller = useRef<AbortController | null>(null);
   const busy = useRef(false);
   const success = useRef<HTMLHeadingElement>(null);
@@ -26,6 +29,9 @@ export default function Waitlist() {
   useEffect(() => {
     if (phase === 'success') success.current?.focus();
   }, [phase]);
+  useEffect(() => {
+    if (error) errorMessage.current?.focus();
+  }, [error]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy.current || phase === 'success') return;
@@ -34,6 +40,7 @@ export default function Waitlist() {
     busy.current = true;
     setPhase('busy');
     setError(null);
+    setInvalidEmail(false);
     const abort = new AbortController();
     controller.current = abort;
     const timeout = setTimeout(() => abort.abort(), 15_000);
@@ -49,8 +56,11 @@ export default function Waitlist() {
     } catch (cause) {
       if (abort.signal.aborted && controller.current !== abort) return;
       setPhase('idle');
+      setInvalidEmail(cause instanceof SignupError && cause.status === 422);
       setError(
-        cause instanceof SignupError && cause.status === 429
+        abort.signal.aborted
+          ? t('waitlist.timeout')
+          : cause instanceof SignupError && cause.status === 429
           ? t('waitlist.limited', { seconds: cause.retryAfter })
           : cause instanceof SignupError && cause.status === 422
             ? t('waitlist.invalid')
@@ -90,24 +100,31 @@ export default function Waitlist() {
               <br />
               <span>{t('waitlist.title_dim')}</span>
             </h1>
-            <p className="hero-description">{t('waitlist.description')}</p>
+            <div className="waitlist__explore">
+              <Link className="waitlist__text-link" to="/demo">
+                {t('demo.open_demo')}<Icon name="arrow" size={16} />
+              </Link>
+            </div>
             <form
               className="waitlist__form"
               onSubmit={submit}
               aria-busy={phase === 'busy'}
+              aria-label={t('waitlist.form_title')}
             >
-              <label className="sr-only" htmlFor={`${id}-email`}>
+              <label className="waitlist__email-label sr-only" htmlFor={`${id}-email`}>
                 {t('waitlist.email')}
               </label>
               <div className="email-form">
                 <input
                   id={`${id}-email`}
                   type="email"
+                  inputMode="email"
                   name="email"
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setError(null);
+                    setInvalidEmail(false);
                   }}
                   placeholder="you@example.com"
                   autoComplete="email"
@@ -116,8 +133,8 @@ export default function Waitlist() {
                   maxLength={254}
                   required
                   disabled={phase === 'busy'}
-                  aria-invalid={error ? true : undefined}
-                  aria-describedby={error ? `${id}-error` : `${id}-consent`}
+                  aria-invalid={invalidEmail || undefined}
+                  aria-describedby={`${id}-email-hint${error ? ` ${id}-error` : ''}`}
                 />
                 <button
                   className="btn btn--primary"
@@ -132,6 +149,7 @@ export default function Waitlist() {
                   <Icon name="arrow" size={16} />
                 </button>
               </div>
+              <p className="waitlist__email-hint" id={`${id}-email-hint`}>{t('waitlist.email_hint')}</p>
               <div className="honeypot" aria-hidden="true">
                 <label htmlFor={`${id}-website`}>Website</label>
                 <input
@@ -157,27 +175,41 @@ export default function Waitlist() {
                 </span>
               </label>
               {error && (
-                <p id={`${id}-error`} className="field__error" role="alert">
+                <p ref={errorMessage} tabIndex={-1} id={`${id}-error`} className="field__error" role="alert">
                   {error}
                 </p>
               )}
             </form>
-            <div
-              className="waitlist__pipeline"
-              aria-label={t('waitlist.pipeline_label')}
-            >
-              <span>Telegram</span>
-              <span className="pipeline-line" aria-hidden="true" />
-              <span className="pipeline-core">LV</span>
-              <span className="pipeline-line" aria-hidden="true" />
-              <span>MetaTrader 5</span>
+            <a className="waitlist__story" href={`/assets/showcase/${locale}/index.html`}>
+              <img
+                className="waitlist__story-preview"
+                src="/assets/previews/story.webp"
+                alt={t('waitlist.story_preview')}
+                width="1200"
+                height="760"
+                loading="lazy"
+                decoding="async"
+              />
+              <span className="waitlist__story-action waitlist__text-link">
+                {t('waitlist.story')}<Icon name="arrow" size={16} />
+              </span>
+            </a>
+            <div className="waitlist__details">
+              {(['hosting', 'control', 'open'] as const).map((feature) => (
+                <div key={feature}>
+                  <h2>{t(`waitlist.${feature}_title`)}</h2>
+                  <p>{t(`waitlist.${feature}_note`)}</p>
+                </div>
+              ))}
             </div>
+            <p className="waitlist__risk">{t('waitlist.risk')}</p>
           </>
         )}
-        <Link className="waitlist__demo-link" to="/demo">
-          {t('demo.open_demo')}
-          <Icon name="arrow" size={14} />
-        </Link>
+        {phase === 'success' && (
+          <Link className="waitlist__demo-link" to="/demo">
+            {t('demo.open_demo')}<Icon name="arrow" size={14} />
+          </Link>
+        )}
       </section>
     </PublicLayout>
   );

@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="i18n.js?v=d73e6478684a" data-app="film"></script>
+<title>LV Copy Trader — промо-видео</title>
+
+<style>
+:root{--bg:#000;--fg:#ededed;--mut:#a1a1a1;--line:#262626;--blue:#52a8ff;--red:#ff5b5b;color-scheme:dark;box-sizing:border-box;}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#000;color:var(--fg);font-family:Geist,Inter,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+#stage{position:relative;height:100%;width:100%;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;background:#000}
+#bg{position:absolute;inset:0;width:100%;height:100%}
+#fg{position:absolute;inset:0;z-index:1;will-change:transform}
+#vig{position:absolute;inset:0;pointer-events:none;z-index:2;background:radial-gradient(ellipse at center,transparent 50%,#000c 100%)}
+#grain{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");animation:gr .45s steps(3) infinite}
+@keyframes gr{to{background-position:160px 90px}}
+#tk{position:absolute;top:calc(8px + env(safe-area-inset-top,0px));left:0;right:0;overflow:hidden;z-index:3;white-space:nowrap;font:12px "Geist Mono",ui-monospace,Menlo,monospace;color:#707070}
+#tk div{display:inline-block;animation:mq 40s linear infinite}
+@keyframes mq{to{transform:translateX(-50%)}}
+.s{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16.896px;padding:99.84px 25.92px 337.92px;text-align:center;opacity:0;visibility:hidden;transform:scale(1.03);transition:opacity .5s ease,visibility .5s,transform .5s ease}
+.s.on{opacity:1;visibility:visible;transform:none;transition:opacity .9s ease .1s,visibility .9s,transform 2s cubic-bezier(.16,1,.3,1) .1s}
+.a{opacity:0;transform:translateY(18px)}
+.on .a{animation:in .9s cubic-bezier(.16,1,.3,1) forwards;animation-delay:calc(var(--d,0)*1s)}
+.on .q{animation-duration:.5s}
+@keyframes in{to{opacity:1;transform:none}}
+.w{display:inline-block}
+h1{font-size:clamp(24px,min(30.24px,35.328px),60px);line-height:1.1;font-weight:700;letter-spacing:-.035em}
+h2{font-size:clamp(22px,21.6px,40px);line-height:1.15;font-weight:600;letter-spacing:-.03em}
+h3{font-size:clamp(16px,16.416px,22px);font-weight:600;letter-spacing:-.01em}
+p{font-size:clamp(15px,13.824px,22px);color:var(--mut);line-height:1.45;max-width:30em}
+.acc{color:var(--blue)}.red{color:var(--red)}
+.tag{font-size:13px;padding:.35em .9em;border-radius:99px;border:1px solid #333;color:var(--mut)}
+/* cards: hairline border, near-black fill */
+.card,.node,.cap,.notif,.bubble,.stat,.pill{background:#0a0a0a;border:1px solid var(--line);border-radius:12px}
+.ico{flex:none;width:40px;height:40px;border-radius:10px;border:1px solid #2e2e2e;background:#111;display:grid;place-items:center;color:var(--fg)}
+.ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ico.mt svg{width:26px;height:26px;stroke-width:2.1}
+.ico.logo{border:0;background:none}.ico.logo svg{width:100%;height:100%;stroke:none}
+.hk{display:flex;align-items:center;gap:8.64px;width:min(406.08px,820px);justify-content:center}
+.pill{display:flex;align-items:center;gap:.55em;padding:.45em .8em .45em .5em;font-weight:600;font-size:clamp(16px,18.144px,32px);white-space:nowrap}
+.pill .ico{width:1.7em;height:1.7em;border-radius:.4em}.pill .ico svg{width:1.7em;height:1.7em}.pill .ico.mt svg{width:1.3em;height:1.3em}
+.wire{flex:1;min-width:25.92px;height:1px;background:#333;position:relative;overflow:hidden}
+.wire i{position:absolute;top:0;bottom:0;left:0;width:40%;background:linear-gradient(90deg,transparent,#fff,transparent);animation:wr .9s linear infinite}
+@keyframes wr{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+.cnt small{display:block;color:#707070;font:500 clamp(11px,11.232px,14px) "Geist Mono",monospace;letter-spacing:.06em;text-transform:uppercase}
+.cnt b{font:600 clamp(44px,min(64.8px,69.12px),116px) "Geist Mono",ui-monospace,monospace;letter-spacing:-.05em;transition:color .25s}
+.deal{display:inline-flex;align-items:center;gap:8px;padding:.7em 1.1em;border-radius:8px;background:#fff;color:#000;font-weight:600;font-size:clamp(13px,14.256px,18px)}
+.deal svg,.btn svg{width:1.2em;height:1.2em;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.on .deal{animation:in .5s forwards,pop 1.8s 2.8s ease-out infinite;animation-delay:2.3s,0s}
+@keyframes pop{0%{box-shadow:0 0 0 0 #ffffff55}100%{box-shadow:0 0 0 22px #fff0}}
+.bubble{padding:14px 18px;font:500 clamp(13px,14.688px,18px) "Geist Mono",ui-monospace,monospace;line-height:1.7;text-align:left;max-width:388.8px}
+.bubble b{color:var(--blue)}
+.bh{display:flex;align-items:center;gap:8px;font:500 12px Geist,sans-serif;color:var(--mut);margin-bottom:6px}.bh .ico{width:20px;height:20px}
+.stats{display:flex;gap:12px}
+.stat{padding:12px 18px;min-width:146.88px;max-width:240px;text-align:left}
+.stat small{display:block;color:#707070;font-size:clamp(11px,10.368px,13px)}
+.stat b{font:600 clamp(22px,21.6px,34px) "Geist Mono",monospace;color:var(--red);letter-spacing:-.03em}
+.flow{display:flex;flex-direction:column;align-items:center}
+.node{display:flex;align-items:center;gap:14px;text-align:left;padding:9px 14px;width:min(380.16px,400px)}.node .ico{width:36px;height:36px}
+.node b,.cap b{display:block;font-weight:600;font-size:clamp(15px,16.416px,18px)}
+.node small,.cap small{display:block;color:var(--mut);font-size:clamp(12px,12.96px,14px);margin-top:2px}
+.cn{width:1px;height:12px;background:#444}
+.row{display:flex;flex-direction:column;gap:12px;align-items:stretch;width:min(380.16px,860px)}
+.card{padding:16px 18px;text-align:left;flex:1}
+.ch{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.card p{font-size:clamp(14px,12.96px,17px)}
+.feed{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.feed div{padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#000;font:500 12px "Geist Mono",monospace;color:var(--mut)}
+.feed .no{opacity:.4;text-decoration:line-through}.feed .ok{color:var(--fg);border-color:#52a8ff66}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:min(388.8px,720px)}
+.cap{padding:16px;text-align:left}.cap .ico{margin-bottom:14px}
+.notif{padding:14px 18px;text-align:left;width:min(380.16px,420px);font-size:clamp(14px,14.256px,18px);line-height:1.6}
+.notif .h{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:13px;margin-bottom:6px}.notif .h .ico{width:22px;height:22px}.notif .h em{margin-left:auto;font-style:normal;color:#707070}
+.big{font:700 clamp(80px,103.68px,200px) Geist,sans-serif;letter-spacing:-.06em;line-height:1;background:linear-gradient(180deg,#fff,#6b6b6b);-webkit-background-clip:text;background-clip:text;color:transparent}
+.live{display:flex;gap:18px;font-size:clamp(12px,12.096px,16px);color:var(--mut)}
+.live span::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--blue);margin-right:.5em;animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.btn{display:inline-flex;align-items:center;gap:8px;margin-top:7.68px;padding:.8em 1.5em;border-radius:8px;background:#fff;color:#000;font-weight:600;font-size:clamp(15px,15.552px,20px)}
+#cap{position:absolute;left:21.6px;right:21.6px;bottom:268.8px;z-index:5;text-align:center;font:800 clamp(20px,24.192px,34px)/1.3 Geist,Inter,sans-serif;letter-spacing:-.01em;opacity:0;transition:opacity .3s;pointer-events:none}
+#cap span{display:inline-block;margin:0 .1em;color:#8a8a8a;text-shadow:0 2px 12px #000,0 0 3px #000;transition:color .14s,transform .16s cubic-bezier(.16,1,.3,1)}
+#cap span.rd{color:#fff}#cap span.cu{color:#52a8ff;transform:scale(1.2)}
+#bar{position:absolute;left:0;bottom:0;height:2px;width:0;background:#fff;z-index:5}
+#ctl{position:absolute;right:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:6;color:var(--mut);font-size:12px;background:#000a;border:1px solid var(--line);border-radius:99px;padding:.4em .9em}
+#fade{display:none}
+#hud{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:7;display:none;gap:8px}
+#hud button{font-size:15px;background:#000a;border:1px solid var(--line);border-radius:99px;width:36px;height:36px;color:var(--fg)}
+#start{position:absolute;inset:0;z-index:20;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15.36px;text-align:center;padding:25.92px}
+#start button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:.8em 1.8em;font-weight:600;font-size:clamp(16px,14.688px,20px);background:#fff;color:#000}
+#start .opts{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#start .opts button{background:#0a0a0a;color:var(--fg);border:1px solid var(--line);font-weight:500;font-size:14px;padding:.7em 1.2em}
+#start select{background:#0a0a0a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.6em;max-width:345.6px;font:inherit;font-size:13px}
+.stack{display:grid;place-items:center;width:100%}.stack>*{grid-area:1/1}.brand{display:flex;flex-direction:column;align-items:center;gap:16.896px}
+.stack.row{width:min(380.16px,860px)}
+.qq{opacity:0}.on .qq{animation:in .9s cubic-bezier(.16,1,.3,1) forwards,out .5s ease forwards;animation-delay:calc(var(--d,0)*1s),calc(var(--o,4)*1s)}
+@keyframes out{to{opacity:0;transform:translateY(-12px)}}
+#stage.idle #hud,#stage.idle #ctl{opacity:0;transition:opacity .6s}
+.paused *{animation-play-state:paused!important}
+
+
+/* Fixed portrait artboard. Only the chart's world is transformed by its camera. */
+html,body{width:100%;height:100%;height:100dvh}
+#viewport{position:fixed;inset:0;display:grid;place-items:center;background:#101114;overflow:hidden}
+#stage{width:432px;height:768px;flex:none;transform-origin:center center;box-shadow:0 0 70px #0008}
+#fg{transform:none!important;will-change:auto}
+.s{inset:125px 62px 271px 28px;padding:0;gap:18px;transform:none;transition:opacity .35s,visibility .35s}
+.s.on{transform:none;transition:opacity .65s,visibility .65s}
+/* Entrances are fades: no card changes its position when the market moves. */
+.a,.qq{transform:none}
+@keyframes in{to{opacity:1}}
+@keyframes out{to{opacity:0}}
+.hk{width:100%;gap:8px}.pill{font-size:13px;padding:7px;gap:5px}.wire{min-width:12px}
+.cnt b{font-size:60px}.cnt small{font-size:10px}
+h1{font-size:31px}h2{font-size:25px}h3{font-size:17px}
+.deal{font-size:12px;padding:10px 12px;white-space:nowrap}
+.bubble{width:100%;font-size:15px;padding:14px 16px}
+.stats{width:100%;gap:10px}.stat{min-width:0;flex:1;padding:12px}.stat b{font-size:25px}
+.flow,.row,.stack.row{width:100%}.node{width:100%;padding:10px 13px;gap:12px;min-height:56px}.node b{font-size:16px}.node small{font-size:12px}
+.cn{height:12px}.card{width:100%;padding:17px}.card p{font-size:15px}
+.grid{width:100%;gap:10px}.cap{padding:13px}.cap b{font-size:14px}.cap small{font-size:12px}.cap .ico{margin-bottom:10px;width:34px;height:34px}
+.notif{width:100%;padding:13px 15px;font-size:15px}.notif .h{font-size:12px}
+.big{font-size:112px}.live{gap:12px;font-size:12px}.btn{font-size:15px;padding:14px 17px;white-space:nowrap}
+.brand{gap:18px}.brand h1{font-size:38px!important}.brand h2{font-size:22px}
+#tk{top:79px;font-size:10px;opacity:.65;z-index:2;pointer-events:none}
+#caption-zone{position:absolute;left:24px;right:60px;top:525px;height:77px;z-index:8;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#caption-zone:before{content:"";position:absolute;inset:-14px -12px;background:radial-gradient(ellipse,#000f 20%,#000c 55%,#0000 74%);z-index:-1}
+#cap{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:0 17px;position:relative;inset:auto;width:100%;font-size:24px;line-height:1.55;letter-spacing:-.025em;font-weight:800;text-align:center;transition:opacity .18s}
+#cap span{display:inline-block;margin:0;color:#a4abb6;text-shadow:0 2px 5px #000,0 0 15px #000;transition:color .09s,transform .12s;transform-origin:center}
+#cap span.rd{color:#f2f4f8}#cap span.cu{color:#74bdff;transform:scale(1.12);text-shadow:0 0 18px #52a8ff55,0 2px 4px #000}
+#bar{height:2px;opacity:.35}
+#ctl{right:18px;bottom:22px;font-size:10px}#hud{left:18px;bottom:18px}
+#hud button{width:32px;height:32px;font-size:13px;cursor:pointer}
+#start{padding:36px;gap:22px}#start h1{font-size:40px}#start .tag{font-size:11px}#start p{font-size:13px;max-width:280px}
+#start button{font-size:17px}#start .opts button{font-size:12px}#start select{max-width:320px;width:100%}
+#safe-guide{display:none;position:absolute;inset:0;z-index:19;pointer-events:none}
+.guides #safe-guide{display:block}
+#safe-guide:before{content:"REELS UI / RESERVED";position:absolute;top:0;left:0;right:0;height:70px;background:#ff335522;color:#ff8195;font:10px monospace;padding:10px}
+#safe-guide:after{content:"REELS UI / RESERVED";position:absolute;left:0;right:0;top:615px;bottom:0;background:#ff335522;color:#ff8195;font:10px monospace;padding:10px}
+#safe-guide i{position:absolute;right:0;top:70px;bottom:153px;width:52px;background:#ff33551a}
+.paused #tk div,.paused #grain{animation-play-state:paused}
+
+
+/* Centered presentation over a full-viewport market background. */
+#viewport{background:#030406;isolation:isolate}
+#bg{z-index:0;pointer-events:none;filter:blur(1.1px);transform:scale(1.035);opacity:.78}
+#vig{z-index:0;background:radial-gradient(ellipse at 50% 45%,#0000 15%,#03040644 65%,#030406aa 100%)}
+#grain{z-index:0;opacity:.035}
+#stage{z-index:1;background:transparent;box-shadow:none}
+.s{inset:128px 44px 250px;gap:18px}
+#caption-zone{left:44px;right:44px;top:538px;height:72px}
+#cap{line-height:1.4}
+#caption-zone:before{inset:-12px -22px;background:radial-gradient(ellipse,#030406e8 15%,#030406b8 52%,#03040600 75%)}
+/* Rounded, softly lit iOS-style surfaces. */
+.card,.node,.cap,.notif,.bubble,.stat,.pill{
+ background:linear-gradient(155deg,rgba(31,34,41,.88),rgba(13,15,20,.94));
+ border:1px solid rgba(255,255,255,.13);border-radius:26px;
+ -webkit-backdrop-filter:blur(22px) saturate(1.35);backdrop-filter:blur(22px) saturate(1.35);
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.065),0 12px 28px rgba(0,0,0,.22);
+}
+.ico{border-radius:50%;border-color:#ffffff18;background:linear-gradient(155deg,#ffffff10,#ffffff03);box-shadow:inset 0 1px 0 #ffffff0a}
+.ico.logo{box-shadow:none}
+.pill{border-radius:999px;padding:9px 11px;font-size:13px}
+.pill .ico{border-radius:50%}
+.node{border-radius:23px;min-height:62px;padding:11px 16px}
+.bubble{padding:18px 20px}
+.stat{padding:15px 14px;border-radius:24px}
+.stat small{font-size:10px}.stat b{font-size:24px}
+.grid{gap:12px;grid-auto-rows:1fr;align-items:stretch}
+.cap{min-height:154px;padding:16px 11px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.cap .ico{margin:0 0 10px;width:36px;height:36px;flex:none}
+.cap b{font-size:14px;line-height:1.25;max-width:142px}
+.cap small{font-size:12px;line-height:1.3;margin-top:6px;max-width:142px}
+.card{padding:20px}.card .ch{justify-content:center}.card p{text-align:center}
+.feed div{border-radius:13px;padding:8px 11px;font-size:11px}
+.notif{padding:16px 19px;border-radius:27px}
+.btn,.deal,#start button{border-radius:999px;min-height:46px;justify-content:center;background:linear-gradient(180deg,#fff,#e5e9f0);box-shadow:inset 0 1px 1px #fff,0 6px 24px #0004}
+.btn{padding:15px 22px}.deal{padding:12px 16px;font-size:11px;animation-iteration-count:1!important}
+#start{background:radial-gradient(ellipse at center,#030406cc,#030406f2);gap:22px}
+#start .opts button,#hud button,#ctl{background:#20232bb3;border:1px solid #ffffff1c;-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:inset 0 1px 0 #ffffff0a}
+#start .opts button{border-radius:999px;padding:11px 17px}
+#start select{border-radius:22px;padding:13px 17px;background:#181b23d9;border:1px solid #ffffff1c;min-height:46px}
+#hud button{width:36px;height:36px;border-radius:50%}
+#ctl{padding:8px 13px;border-radius:999px}
+
+
+/* Typography: Manrope for headlines, Inter for reading, Plex Mono for data. */
+html,body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.008em}
+h1,h2,h3,.big{font-family:Manrope,Inter,sans-serif;letter-spacing:-.012em}
+h1{line-height:1.15}h2{line-height:1.23}h3{letter-spacing:0}
+p,.node small,.cap small{letter-spacing:.008em;line-height:1.45}
+.btn,.deal{font-family:Inter,sans-serif;letter-spacing:.012em}
+.cnt b,.stat b,.bubble,.feed div{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.012em}
+.cnt b{font-size:57px}.stat b{font-size:23px}
+#tk,.cnt small{font-family:"IBM Plex Mono",monospace;letter-spacing:.07em}
+#cap{font-family:Inter,sans-serif;letter-spacing:.006em;font-size:23px;gap:0 14px}
+.cap b{font-family:Manrope,sans-serif;letter-spacing:.005em}.cap small{font-size:11.5px;line-height:1.35}
+.typed-char{display:inline;opacity:0;filter:blur(2px)}
+.typed-char.caret{box-shadow:1px 0 0 #8ecbff}
+.number-slot{display:inline-block;position:relative;vertical-align:top;width:.60em;height:1.08em;overflow:hidden;letter-spacing:0}
+.number-reel{display:block;transition:transform .32s cubic-bezier(.22,.75,.25,1);will-change:transform}
+.number-reel i{display:block;font-style:normal;height:1.08em;line-height:1.08em;text-align:center}
+.number-punct{display:inline-block;vertical-align:top;line-height:1.08em;letter-spacing:0}
+.rolling-number{display:inline-block;line-height:1.08;font-variant-numeric:tabular-nums;white-space:nowrap}
+#tk{opacity:calc(.65 * (1 - var(--chart-focus,0)))}
+#delay-scene{inset:0;display:block;--inspect:0;--inspect-out:0}
+#delay-title{position:absolute;top:122px;left:24px;right:24px;font-size:24px;text-align:center;opacity:calc(1 - var(--inspect-out))}
+#signal-card,#elapsed-card,#current-card{position:absolute;margin:0;border:0;background:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+#signal-card:before,#elapsed-card:before,#current-card:before{content:"";position:absolute;inset:0;z-index:-1;border-radius:26px;border:1px solid #ffffff21;background:linear-gradient(150deg,#1c2029f2,#0e1118f5);box-shadow:inset 0 1px 0 #ffffff0d,0 14px 30px #0003;opacity:calc(1 - var(--inspect))}
+#signal-card{top:calc(165px - var(--inspect) * 8px);left:calc(44px - var(--inspect) * 20px);width:calc(344px - var(--inspect) * 158px);height:calc(142px - var(--inspect) * 64px);padding:0;text-align:center;isolation:isolate;opacity:calc(1 - var(--inspect-out))}
+.signal-meta{position:absolute;top:15px;left:18px;right:18px;display:flex;justify-content:space-between;font:500 11px Inter,sans-serif;color:#9ca7b8;opacity:calc(1 - var(--inspect))}
+.signal-meta span{color:#6d7787}
+.signal-side{position:absolute;top:40px;left:0;right:0;font-size:15px;opacity:calc(1 - var(--inspect))}.signal-side b{color:#85c7ff}
+.entry-line{position:absolute;top:calc(68px - var(--inspect) * 52px);left:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--inspect) * 7px);flex-wrap:wrap}
+.entry-line small{font:500 11px Inter,sans-serif;color:#a5b5ca;letter-spacing:.05em}
+.entry-line strong{font:600 21px "IBM Plex Mono",monospace;color:#d6edff}
+.signal-protection{position:absolute;top:109px;left:0;right:0;font:500 11px "IBM Plex Mono",monospace;color:#8997aa;opacity:calc(1 - var(--inspect))}.signal-protection>i{font-style:normal;margin:0 7px;color:#4c5664}
+#elapsed-card{top:calc(322px - var(--inspect) * 165px);left:calc(44px + var(--inspect) * 178px);width:calc(166px + var(--inspect) * 20px);height:78px;text-align:center;padding:16px 5px;isolation:isolate;opacity:calc(1 - var(--inspect-out))}
+#elapsed-card small,#current-card small{font:500 10px Inter,sans-serif;color:#96a3b7;letter-spacing:.035em;margin-bottom:7px}
+#elapsed-card b{font:600 25px "IBM Plex Mono",monospace;color:#ffd18b}
+#current-card{top:322px;left:222px;width:166px;height:78px;padding:16px 5px;text-align:center;isolation:isolate;opacity:calc(1 - var(--inspect));transform:translateY(calc(var(--inspect) * 12px))}
+#current-card b{font:600 23px "IBM Plex Mono",monospace;color:#f1b5a5}
+#delay-question{position:absolute;top:426px;left:42px;right:42px;font-size:28px;opacity:calc(1 - var(--inspect))!important}
+#trade-frame{position:absolute;left:24px;top:246px;width:384px;height:250px;border:1px solid #ffffff20;border-radius:25px;box-shadow:inset 0 1px 0 #ffffff07,0 16px 50px #0004;opacity:var(--chart-focus,0);overflow:hidden;pointer-events:none}
+.trade-topline{position:absolute;left:16px;right:16px;top:13px;display:flex;align-items:center;justify-content:space-between;font:500 10px "IBM Plex Mono",monospace;letter-spacing:.03em;color:#bac8dc}
+.trade-topline b{color:#84c6ff;margin-left:7px;font-size:9px}.trade-topline>span:last-child{font:500 8px Inter,sans-serif;color:#78869a;letter-spacing:.03em}
+.trade-footer{position:absolute;left:16px;right:88px;bottom:12px;display:flex;justify-content:space-between;font:500 8px Inter,sans-serif;color:#7c90aa;letter-spacing:.025em}
+.trade-footer span:last-child{color:#c7a978}
+#trade-summary{position:absolute;left:36px;right:36px;top:506px;display:flex;justify-content:space-around;text-align:center;gap:18px;opacity:var(--reaction,0);transform:translateY(calc((1 - var(--reaction,0)) * 8px))}
+#trade-summary small{display:block;font:600 7px Inter,sans-serif;letter-spacing:.09em;color:#8090a6;margin-bottom:4px}
+#trade-summary b{font:600 17px "IBM Plex Mono",monospace;color:#ffd18b}
+#trade-summary>div:last-child b{color:#94d8ba}
+
+
+/* Original signal cards. Only their entry/time readouts leave the surfaces. */
+#signal-card{height:calc(146px - var(--inspect) * 68px);opacity:calc(var(--signal-in,1) * (1 - var(--inspect-out)))}
+#signal-card:before,#elapsed-card:before,#current-card:before{background:linear-gradient(150deg,#13171eeF,#090c11f5);border-color:#ffffff20}
+.signal-meta{display:flex;align-items:center;justify-content:flex-start;gap:8px;top:15px;font-size:11px;letter-spacing:0;color:#a0aabb}
+.signal-meta .ico{width:23px;height:23px;flex:none}.signal-meta em{font-style:normal;font-size:10px;color:#667282;margin-left:auto}
+.signal-side{top:48px;left:20px;right:20px;text-align:left;font-size:15px}
+.entry-line{top:calc(77px - var(--inspect) * 57px);left:calc(20px - var(--inspect) * 20px);right:auto;width:calc(304px - var(--inspect) * 118px);height:48px;display:block;gap:0}
+.entry-line small{position:absolute;top:0;left:calc(var(--inspect) * 75px);font-size:calc(13px - var(--inspect) * 2px);line-height:1.5;letter-spacing:.015em;white-space:nowrap}
+.entry-line strong{position:absolute;top:calc(var(--inspect) * 18px);left:calc(62px - var(--inspect) * 14px);font-size:calc(16px + var(--inspect) * 5px);line-height:1.3;white-space:nowrap}
+.signal-protection{top:112px;left:20px;right:20px;text-align:left;line-height:1.4}
+#elapsed-card{opacity:calc(var(--stats-in,1) * (1 - var(--inspect-out)))}
+#current-card{opacity:calc(var(--stats-in,1) * (1 - var(--inspect)))}
+#elapsed-card b{color:color-mix(in srgb,#ff7c7c calc((1 - var(--inspect)) * 100%),#ffd18b)}
+#current-card b{color:#ff8c83}
+#delay-title{opacity:calc(1 - var(--inspect-out))!important}
+#replay-note{position:absolute;top:228px;left:44px;right:44px;display:flex;justify-content:space-between;align-items:center;opacity:calc(var(--chart-focus,0) * (1 - var(--inspect-out)));font:500 9px "IBM Plex Mono",monospace;letter-spacing:.04em;color:#8d9eb5;pointer-events:none}
+#replay-note b{color:#86c5ff;font-weight:500;font-size:8px;margin-left:5px}
+#replay-note>span:last-child{font-family:Inter,sans-serif;font-size:8px;color:#78869a}
+/* The canvas stays full bleed throughout; a soft fade protects the text. */
+#bg{transform:none}
+
+
+/* Viewport chrome stays at the edge on tall phones, independently of the artboard. */
+#stage{overflow:visible}
+#top-chrome{position:absolute;inset:0 0 auto;z-index:6;pointer-events:none;padding-top:env(safe-area-inset-top,0px)}
+#tk{top:calc(18px + env(safe-area-inset-top,0px));font-size:clamp(9px,2.3vw,12px);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+#delay-title{top:calc(122px + var(--inspect) * (var(--title-top,22px) - 122px));font-size:calc(24px - var(--inspect) * 3px)}
+#signal-card{top:calc(165px + var(--inspect) * (var(--readout-top,58px) - 165px))}
+#elapsed-card{top:calc(322px + var(--inspect) * (var(--readout-top,58px) - 322px))}
+#replay-note{top:calc(228px + var(--inspect) * (var(--note-top,145px) - 228px))}
+#player-panel[hidden],#ctl[hidden]{display:none!important}
+#player-panel{position:absolute;z-index:30;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:540px;padding:15px 18px 12px;border:1px solid #ffffff24;border-radius:28px;background:linear-gradient(155deg,#222936ed,#10141eed);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 #ffffff10,0 15px 50px #0008;cursor:default}
+.player-times{display:flex;align-items:center;justify-content:space-between;color:#9aa9bd;font:500 11px "IBM Plex Mono",monospace;letter-spacing:.04em;margin-bottom:5px}.player-times span:first-child{color:#e2efff}
+#seek{display:block;width:100%;height:28px;margin:0;appearance:none;-webkit-appearance:none;background:transparent;cursor:pointer;touch-action:none}
+#seek::-webkit-slider-runnable-track{height:4px;border-radius:9px;background:linear-gradient(90deg,#8bc7ff var(--progress,0%),#ffffff24 var(--progress,0%))}
+#seek::-moz-range-track{height:4px;border-radius:9px;background:#ffffff24}#seek::-moz-range-progress{height:4px;background:#8bc7ff;border-radius:9px}
+#seek::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#eef7ff;margin-top:-7px;box-shadow:0 0 0 5px #8bc7ff16,0 2px 9px #0005}
+#seek::-moz-range-thumb{width:18px;height:18px;border:0;border-radius:50%;background:#eef7ff}
+#seek:focus-visible{outline:2px solid #8bc7ff;outline-offset:3px;border-radius:12px}
+.player-actions{display:flex;justify-content:space-between;align-items:center;gap:8px}.transport{display:flex;align-items:center;gap:9px}
+#player-panel button{display:grid;place-items:center;width:36px;height:36px;border:1px solid #ffffff18;border-radius:50%;background:#ffffff08;color:#d5e4f6;font:600 11px Inter,sans-serif;cursor:pointer}
+#player-panel #resume{width:40px;height:40px;background:#eaf4ff;color:#0a1827;border-color:#fff;font-size:15px}
+#player-panel #hud{display:flex;position:static;gap:7px;opacity:1}#player-panel #hud button{font-size:14px}
+#ctl{left:50%;right:auto;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));white-space:nowrap;pointer-events:none;font:500 10px Inter,sans-serif;z-index:8;opacity:.7}
+#bar{position:absolute;bottom:0;z-index:7;pointer-events:none}
+/* Two extra scenes: a signal travelling through the pipeline and a live parser. */
+.flow .node{position:relative;padding-right:38px;--hot:0;border-color:rgba(117,188,255,calc(.13 + var(--hot) * .4));box-shadow:inset 0 1px 0 #ffffff10,0 0 25px rgba(82,168,255,calc(var(--hot) * .11))}
+.flow .node:after{content:'✓';position:absolute;right:15px;color:#a8d8ff;font-size:14px;opacity:var(--complete,0);transform:scale(calc(.6 + var(--complete,0) * .4))}
+.flow .node .ico{box-shadow:0 0 18px rgba(82,168,255,calc(var(--hot) * .2))}
+.flow .cn{position:relative;width:2px;background:linear-gradient(#8fcaff66,#8fcaff16)}
+.flow .cn:after{content:'';position:absolute;left:-2px;top:calc(var(--travel,0) * 100%);width:6px;height:6px;border-radius:50%;background:#a0d1ff;box-shadow:0 0 10px #52a8ff;opacity:var(--packet,0)}
+.parser-feed{position:relative;overflow:hidden}.parser-feed:after{content:'';position:absolute;left:0;right:0;top:calc(var(--scan,0) * 100%);height:1px;background:linear-gradient(90deg,transparent,#9dd1ff,transparent);box-shadow:0 0 13px #52a8ff;opacity:var(--scanning,0);pointer-events:none}
+.parser-feed .no{opacity:calc(1 - var(--classified,0) * .65);text-decoration:none;color:#a6adbb}.parser-feed .no:after{content:'−';float:right;opacity:var(--classified,0);color:#778397}
+.parser-feed .ok{border-color:rgba(118,193,255,calc(.16 + var(--found,0) * .5));background:rgba(82,168,255,calc(var(--found,0) * .09));color:#d8ecff;box-shadow:0 0 18px rgba(82,168,255,calc(var(--found,0) * .09))}
+.parse-result{display:flex;gap:6px;justify-content:center;opacity:var(--found,0);margin-top:12px;font:500 8px "IBM Plex Mono",monospace;color:#aad6ff}
+.parse-result span{border:1px solid #8bc7ff26;border-radius:10px;padding:6px;background:#52a8ff0c}
+.parse-status{margin-top:9px;color:#a9d6ba;text-align:center;font:500 9px Inter,sans-serif;opacity:var(--found,0);letter-spacing:.025em}
+.template-feed .ok{opacity:calc(.35 + var(--matched,0) * .65);border-color:rgba(118,193,255,calc(.15 + var(--matched,0) * .4))}.template-feed .ok:after{content:'✓';float:right;color:#9fd6b4;opacity:var(--matched,0)}
+
+
+/* The bot attaches its signal to the running full-bleed candle market. */
+#bot-scene{inset:0;display:block;--received:0;--recognized:0;--executed:0;--protected:0;--bot-leave:0}
+#bot-title{position:absolute;top:var(--title-top,22px);left:24px;right:24px;font-size:22px;line-height:1.25;opacity:calc(1 - var(--bot-leave))}
+#bot-network{position:absolute;top:var(--readout-top,58px);left:44px;right:44px;height:87px;display:flex;justify-content:space-between;opacity:calc(1 - var(--bot-leave))}
+.bot-wire{position:absolute;inset:0;width:100%;height:60px;overflow:visible}.bot-wire path{fill:none;stroke:#ffffff18;stroke-width:1;stroke-dasharray:3 5}.bot-wire #bot-wire-lit{stroke:#8ecbff;stroke-dasharray:264;stroke-dashoffset:calc(264 * (1 - var(--route,0)));filter:drop-shadow(0 0 4px #52a8ff)}
+#bot-packet{fill:#c4e5ff;filter:drop-shadow(0 0 5px #7fc5ff);opacity:var(--packet,0)}
+.bot-port{width:80px;position:relative;text-align:center;--ready:0}.bot-port:nth-of-type(2){width:118px}.port-icon{width:47px;height:47px;margin:4px auto 8px;display:grid;place-items:center;border-radius:50%;background:#0b111c;border:1px solid rgba(128,194,255,calc(.2 + var(--ready) * .6));box-shadow:0 0 25px rgba(82,168,255,calc(var(--ready) * .22))}
+.port-icon.plain-icon{background:none;border:0;border-radius:0;box-shadow:none}.port-icon.plain-icon svg{width:40px;height:40px}
+.port-icon svg{width:25px;height:25px;stroke:#bbdefe;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.port-icon.telegram svg{width:40px;height:40px;stroke:none}.bot-port b{display:block;font:500 9px Inter,sans-serif;color:#d8e6f7;white-space:nowrap}.bot-port small{display:block;font:400 8px Inter,sans-serif;color:#77869e;margin-top:4px}.bot-port small.done{color:#a8d9bd}
+#bot-replay-note{position:absolute;top:calc(var(--readout-top,58px) + 105px);left:44px;right:44px;display:flex;justify-content:space-between;gap:8px;font:500 7px "IBM Plex Mono",monospace;letter-spacing:.025em;color:#788fa9;opacity:calc(1 - var(--bot-leave))}#bot-replay-note b{display:block;margin-top:5px;color:#9accff;font-size:9px;font-weight:500}#bot-replay-note>span:last-child{font:500 6px Inter,sans-serif;letter-spacing:.08em;text-align:right}
+.bot-check{display:grid;place-items:center;flex:none;width:29px;height:29px;border-radius:50%;border:1px solid #9de2bb55;background:#8ddfb113;color:#a0dfb9;font-size:15px}.bot-bolt{margin-left:auto;font:500 30px Inter,sans-serif;color:#abd4ff}
+#bot-result{position:absolute;top:499px;left:44px;right:44px;display:flex;justify-content:space-between;text-align:left;opacity:calc(var(--executed) * (1 - var(--bot-leave)))}#bot-result>div:last-child{text-align:right}#bot-result small{display:block;font:500 6.5px Inter,sans-serif;letter-spacing:.08em;color:#7b91aa;margin-bottom:4px}#bot-result strong{font:500 17px "IBM Plex Mono",monospace;color:#aad6ff}#bot-result>div:last-child strong{color:#b3c6dd}
+/* The same monitoring scene as the website, driven by the film clock. */
+#watch-scene{inset:0;display:flex;padding:90px 30px 98px;justify-content:center}
+.watch-content{width:100%;display:flex;flex-direction:column;align-items:center;transform-style:preserve-3d}
+.watch-night{display:flex;align-items:center;justify-content:center;gap:17px;margin-bottom:12px}
+.watch-night>span{font:500 6px "IBM Plex Mono",monospace;letter-spacing:.08em;color:#7e92ad}.watch-night strong{font:500 18px "IBM Plex Mono",monospace;color:#bdcee3}.watch-night>img{width:17px;height:17px}
+#watch-orbit{position:relative;width:300px;height:300px;margin:0 auto 25px;transform-style:preserve-3d;perspective:800px;flex-shrink:0}
+#watch-orbit .orbit-ring{position:absolute;border-radius:50%;border:1px solid #96caff30;inset:12%;transform:rotateX(var(--orbit-tilt,12deg))}
+#watch-orbit .ring-two{inset:20%;border-style:dashed;border-color:#96caff17}#watch-orbit .ring-three{inset:4%;border-color:#96caff0c;transform:rotateY(30deg) rotateX(20deg)}
+.watch-sweep{position:absolute;inset:12%;border-radius:50%;background:conic-gradient(from var(--angle,0deg),transparent 0deg,transparent 285deg,#52a8ff0b 335deg,#52a8ff22 360deg);mask-image:radial-gradient(transparent 10%,#000 80%);transform:rotateX(var(--orbit-tilt,12deg))}
+.watch-core{position:absolute;inset:18%;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:translateZ(25px)}
+.watch-core>img{width:31px;height:31px;margin-bottom:9px}.watch-core>strong{font:600 68px/1.2 Manrope,Inter,sans-serif;letter-spacing:-.06em;color:#e4f0ff;text-shadow:0 0 45px #52a8ff22}
+.watch-core>span{font:500 5px "IBM Plex Mono",monospace;letter-spacing:.09em;color:#7d9fc6;margin-top:14px;display:flex;gap:6px;align-items:center}.watch-core>span i{width:4px;height:4px;border-radius:50%;background:#9ac9ff;box-shadow:0 0 9px #52a8ff}
+.watch-satellite{position:absolute;display:flex;align-items:center;flex-direction:column;gap:8px;transform:translateZ(50px)}.watch-satellite>img{width:23px;height:23px;border-radius:50%;background:#0c1420;box-shadow:0 0 25px #52a8ff15}.watch-satellite>span{font:500 6px "IBM Plex Mono",monospace;color:#8eafd2;background:#03040699;padding:3px 5px;white-space:nowrap}
+.sat-tg{top:7%;left:43%}.sat-ai{top:69%;left:3%}.sat-mt{top:69%;right:3%}
+#watch-scene h2{font-size:24px;line-height:1.4;white-space:nowrap}#watch-scene .watch-description{font-size:9px;line-height:1.8;color:#929baa;margin-top:17px;max-width:none}
+#viewport[data-presentation-scene="7"] #caption-zone{opacity:0}
+@media(max-height:740px){#viewport.paused #watch-scene{padding-bottom:138px}}
+/* One quiet brand lockup is enough to finish the film. */
+#outro-scene{inset:0;padding:96px 36px 130px;gap:0;justify-content:center}
+.outro-lockup{position:relative;width:100%;text-align:center;isolation:isolate}
+.outro-lockup:before{content:'';position:absolute;z-index:-1;left:50%;top:50%;width:360px;height:250px;transform:translate(-50%,-50%);background:radial-gradient(ellipse,#52a8ff0c,transparent 68%);pointer-events:none}
+#outro-scene .outro-brand{font:600 38px/1.2 Manrope,Inter,sans-serif;letter-spacing:-.05em;white-space:nowrap;color:#eff4fa}
+.outro-rule{display:block;width:42px;height:1px;margin:23px auto 18px;background:linear-gradient(90deg,transparent,#88c8ff99,transparent)}
+#outro-scene .outro-release{font:500 10px/1.5 Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#8da5bf;max-width:none}
+#viewport[data-presentation-scene="8"] #caption-zone{opacity:0}
+
+
+
+/* The ending uses the film clock for both enters and exits, including scrubbing. */
+.tail-scene,.tail-scene.on{transition:none!important;transform:none!important}
+.tail-scene .a,.tail-scene.on .a{animation:none!important;transform:none!important}
+#top-chrome{opacity:calc(1 - var(--outro-focus,0))}
+#outro-scene .btn{box-shadow:inset 0 1px 1px #fff,0 0 35px #8fcaff14}
+
+/* Scene entrances use the same clock as playback, voice barriers and seeking. */
+.s,.s.on{transition:none!important;transform:none!important}
+.s .a,.s.on .a,.s .qq,.s.on .qq{animation:none!important;transform:none!important}
+
+#start{gap:17px}#start .setting-label{font-size:11px;color:#8b9aae;align-self:center;margin-bottom:-10px}#language{width:100%;max-width:320px;min-height:46px}#start p{line-height:1.6}
+html[lang="uz"] .s h1{font-size:28px}html[lang="uz"] #bot-title{font-size:20px}html[lang="en"] #start h1,html[lang="uz"] #start h1{font-size:38px}
+
+.ico.logo{border:0;background:none;box-shadow:none}
+#top-chrome{opacity:calc(1 - var(--outro-focus,0))}#tk{opacity:.8;transition:opacity .4s ease}
+#bot-result{opacity:calc(var(--executed,0)*(1 - var(--bot-leave,0))*(1 - var(--trade-result,0)))}#trade-summary{opacity:calc(var(--reaction,0)*(1 - var(--trade-result,0)))}
+
+/* Film readouts occupy separate viewport bands, like the scroll version. */
+#viewport{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+#replay-note,#bot-replay-note{top:var(--chart-meta-top,145px);align-items:center}
+#trade-summary{top:var(--human-summary-top,506px);left:36px;right:36px;justify-content:space-between;text-align:left;opacity:calc(var(--reaction,0) * var(--chart-summary-visible,1))}
+#trade-summary>div:last-child{text-align:right}
+#bot-result{top:var(--bot-summary-top,499px);opacity:calc(var(--executed,0) * (1 - var(--bot-leave,0)) * var(--chart-summary-visible,1))}
+#trade-summary>div,#bot-result>div{max-width:46%}
+
+
+#timewarp-indicator{position:absolute;z-index:8;right:8%;top:var(--timewarp-top,180px);height:28px;display:flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid #8fcaff35;border-radius:99px;background:#0e1a26d9;color:#b8dcff;font:600 11px 'IBM Plex Mono',monospace;pointer-events:none;opacity:0;overflow:hidden}
+#timewarp-indicator svg{width:27px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#timewarp-indicator path{animation:film-warp-chevron .6s linear infinite;animation-play-state:var(--warp-running,paused)}#timewarp-indicator path:last-child{animation-delay:.15s}
+#timewarp-indicator i{position:absolute;bottom:0;left:0;width:35%;height:1px;background:#a8d8ff;animation:film-warp-sweep .65s linear infinite;animation-play-state:var(--warp-running,paused)}
+@keyframes film-warp-chevron{0%,100%{opacity:.25;transform:translateX(-1px)}50%{opacity:1;transform:translateX(2px)}}
+@keyframes film-warp-sweep{from{transform:translateX(-110%)}to{transform:translateX(400%)}}
+@media(prefers-reduced-motion:reduce){#timewarp-indicator path,#timewarp-indicator i{animation:none}}
+
+
+/* Inactive nodes are quiet. The travelling signal wakes each node in place. */
+.ico.mt{border:0;background:none;box-shadow:none}.ico.mt img{display:block;width:30px;height:30px;object-fit:contain}.pill .ico.mt img{width:1.5em;height:1.5em}
+.watch-satellite>img{object-fit:contain;background:none;border-radius:0;box-shadow:none}
+.port-icon.plain-icon img{display:block;width:40px;height:40px;object-fit:contain}
+.bot-port .port-icon{opacity:calc(.28 + var(--ready,0)*.72);filter:grayscale(calc(1 - var(--ready,0))) brightness(calc(.55 + var(--ready,0)*.45)) drop-shadow(0 0 calc(var(--flash,0)*11px) rgba(130,203,255,calc(var(--flash,0)*.8)))}
+.bot-port>b{opacity:calc(.5 + var(--ready,0)*.5)}
+#bot-replay-note{opacity:calc(var(--executed) * (1 - var(--bot-leave)))}
+
+
+/* One clear hierarchy replaces the two stacked labels in the solution scene. */
+#solution-scene{inset:0;padding:100px 44px 230px;display:flex;align-items:center;justify-content:center}
+.solution-lockup{width:100%;text-align:center}.solution-eyebrow{font:500 8px/1.6 Inter,sans-serif;letter-spacing:.05em;color:#879bb3;max-width:none}
+.solution-chain{display:flex;align-items:center;justify-content:center;gap:10px;margin:26px 0 27px;perspective:1000px;transform-style:preserve-3d}
+.solution-step{display:flex;flex-direction:column;align-items:center;gap:10px;flex:none}.solution-step small{font:500 7px/1.4 Inter,sans-serif;color:#8eabc9;white-space:nowrap}
+.solution-orb{display:grid;place-items:center;width:66px;height:66px;border-radius:22px;background:#152131;border:1px solid #9bcaff33;transform-style:preserve-3d}
+.solution-orb img{display:block;width:37px;height:37px;object-fit:contain}.solution-core{width:78px;height:78px;border-radius:25px}.solution-core img{width:40px;height:40px}
+.solution-line{display:block;flex:0 1 26px;width:26px;height:1px;background:linear-gradient(90deg,#8fcaff20,#a5d8ffa0,#8fcaff20);margin-top:-20px;box-shadow:0 0 8px #52a8ff22}
+#solution-scene .solution-brand{font:600 36px/1.2 Manrope,Inter,sans-serif;letter-spacing:-.045em;white-space:nowrap}
+#solution-scene .solution-subtitle{font:400 23px/1.45 Manrope,Inter,sans-serif;color:#9ba7b8;margin-top:20px}
+.hero-headline{font-size:38px;line-height:1.22}
+
+</style>
+<link rel="stylesheet" href="film-motion.css?v=54780a98ce93">
+<link rel="stylesheet" href="card-relief.css?v=0061f4039243">
+<link rel="stylesheet" href="market-result.css?v=e446a3861111">
+<script src="signal-route.js?v=54661003f071"></script>
+<script src="film-clock.js?v=399ab5509cad"></script>
+<script src="trade-config.js?v=0606cd852ea3"></script>
+<script src="market-simulation.js?v=73313ef4d361"></script>
+<link rel="icon" type="image/png" href="brand/icon.png"><link rel="apple-touch-icon" href="brand/icon.png"><link rel="stylesheet" href="brand.css?v=lv-brand-v1">
+</head>
+<body><svg class="lv-brand-filters" width="0" height="0" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><defs><filter id="lv-clear-matte" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%"><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  10 10 10 0 -0.3"/></filter></defs></svg>
+<main id="viewport">
+<div id="timewarp-indicator" role="status" aria-live="off" aria-hidden="true"><svg viewBox="0 0 36 24" aria-hidden="true"><path d="m4 4 10 8L4 20"/><path d="m18 4 10 8-10 8"/></svg><span>×1</span><i></i></div>
+<canvas id="bg"></canvas><div id="vig"></div><div id="grain"></div>
+<div id="stage">
+<div id="tk"><div>XAUUSD · DEMO &nbsp; 4133.48 &nbsp; / &nbsp; TELEGRAM → METATRADER 5 &nbsp; / &nbsp; LV COPY TRADER &nbsp; / &nbsp; XAUUSD · DEMO &nbsp; 4133.48 &nbsp; / &nbsp; TELEGRAM → METATRADER 5 &nbsp; / &nbsp; LV COPY TRADER &nbsp; / &nbsp; </div></div>
+<div id="fg">
+<!-- 1 hook -->
+<section class="s">
+<div class="hk a q" style="--d:0"><div class="pill"><span class="ico logo"><svg viewBox="64 64 384 384" aria-label="Telegram"><circle cx="256" cy="256" r="192" fill="#2aabee"/><path d="M200 279c-14 9-22 8-34 5s-21-6-33-10-16-13 5-21q167-73 194-81c19-6 24 2 22 17q-7 60-24 151c-3 17-11 31-36 14l-62-42q-14-10-5-20c13-15 36-33 67-65q5-5 3-8t-8 1" fill="#fff"/></svg></span>Telegram</div><div class="wire"><i></i></div><div class="pill"><span class="ico mt"><img src="icons/metatrader.svg" alt="MetaTrader 5"></span>MetaTrader 5</div></div>
+<div class="cnt a q" style="--d:0"><small>XAUUSD · демонстрация</small><b id="hp">4133.48</b></div>
+<h1 class="a hero-headline" style="--d:.75">Работает<br><span class="acc">без остановки.</span></h1>
+
+</section>
+<!-- 2: signal → two-minute replay → human reaction -->
+<section class="s" id="delay-scene">
+<h2 id="delay-title" class="a" style="--d:.1">А за две минуты?</h2>
+<div class="bubble" id="signal-card">
+<div class="signal-meta"><span class="ico logo"><svg viewBox="64 64 384 384" aria-label="Telegram"><circle cx="256" cy="256" r="192" fill="#2aabee"/><path d="M200 279c-14 9-22 8-34 5s-21-6-33-10-16-13 5-21q167-73 194-81c19-6 24 2 22 17q-7 60-24 151c-3 17-11 31-36 14l-62-42q-14-10-5-20c13-15 36-33 67-65q5-5 3-8t-8 1" fill="#fff"/></svg></span><span>Telegram-канал</span><em>сейчас</em></div>
+<div class="signal-side"><b id="signal-side">BUY</b> <span>XAUUSD</span></div>
+<div class="entry-line"><small>Вход</small><strong id="signal-entry">—</strong></div>
+<div class="signal-protection">SL <span id="signal-sl">—</span><i>·</i> TP <span id="signal-tp">—</span></div>
+</div>
+<div class="stat" id="elapsed-card"><small>Вы увидели через</small><b id="tm">00:00</b></div>
+<div class="stat" id="current-card"><small>Цена сейчас</small><b id="pr">—</b></div>
+<h1 id="delay-question" class="a" style="--d:1.6">Рынок <span class="red">не подождал.</span></h1>
+<div id="replay-note"><span>XAUUSD <b id="chart-side">BUY</b></span><span id="replay-label">2 минуты · ускорено</span></div>
+<div id="trade-summary"><div><small>УПУЩЕНО</small><b id="trade-distance">—</b></div><div><small>ОСТАЛОСЬ ДО TP</small><b id="trade-remaining">—</b></div></div>
+</section>
+<!-- 3 -->
+<section class="s" id="solution-scene"><div class="solution-lockup">
+<p class="a solution-eyebrow" style="--d:.15">От уведомления до исполнения</p>
+<div class="solution-chain">
+<div class="solution-step a" style="--d:.45"><div class="solution-orb" style="--d:.45"><img src="icons/telegram-mark.svg" alt=""></div><small>Telegram</small></div>
+<span class="solution-line a" style="--d:.75" aria-hidden="true"></span>
+<div class="solution-step a" style="--d:.7"><div class="solution-orb solution-core" style="--d:.7"><div class="lv-symbol"><img src="brand/mini.png" alt="LV Copy Trader" width="1254" height="1254" decoding="async"></div></div><small>Распознавание</small></div>
+<span class="solution-line a" style="--d:1" aria-hidden="true"></span>
+<div class="solution-step a" style="--d:.95"><div class="solution-orb" style="--d:.95"><img src="icons/metatrader.svg" alt=""></div><small>MetaTrader 5</small></div>
+</div>
+<h1 class="a solution-brand" style="--d:1.1"><span class="lv-wordmark"><img src="brand/logo.png" alt="LV Copy Trader" width="2172" height="724" decoding="async"></span></h1>
+<h2 class="a solution-subtitle" style="--d:1.5">Решит проблему<br>ручного входа.</h2>
+</div></section>
+<!-- 4 -->
+<section class="s">
+<h2 class="a" style="--d:.1">Ваш выбор. Его скорость.</h2>
+<div class="flow">
+<div class="node a" style="--d:1"><span class="ico logo"><svg viewBox="64 64 384 384" aria-label="Telegram"><circle cx="256" cy="256" r="192" fill="#2aabee"/><path d="M200 279c-14 9-22 8-34 5s-21-6-33-10-16-13 5-21q167-73 194-81c19-6 24 2 22 17q-7 60-24 151c-3 17-11 31-36 14l-62-42q-14-10-5-20c13-15 36-33 67-65q5-5 3-8t-8 1" fill="#fff"/></svg></span><div><b>Источник сигналов</b><small>Только выбранный вами канал</small></div></div><span class="cn a" style="--d:1.6"></span>
+<div class="node a" style="--d:2.4"><span class="ico solid-icon"><img src="icons/ai.svg" alt=""></span><div><b>Распознавание</b><small>ИИ или шаблон</small></div></div><span class="cn a" style="--d:3"></span>
+<div class="node a" style="--d:4.4"><span class="ico mt"><img src="icons/metatrader.svg" alt="MetaTrader 5"></span><div><b>MetaTrader 5</b><small>Ваш торговый счёт</small></div></div><span class="cn a" style="--d:5"></span>
+<div class="node a" style="--d:6.6"><span class="ico solid-icon"><img src="icons/bell.svg" alt=""></span><div><b>Личный Telegram-бот</b><small>Отчёт по каждой операции</small></div></div>
+</div>
+</section>
+<!-- 5 -->
+<section class="s" id="parser-scene">
+<h2 class="a" style="--d:.1">Два режима. Один результат.</h2>
+<div class="film-cube-viewport"><div class="film-cube">
+<div class="card film-cube-face film-cube-ai" style="--d:.8"><div class="ch"><span class="ico solid-icon"><img src="icons/ai.svg" alt=""></span><h3>С ИИ</h3></div><p>Вход, направление, SL и TP — из текста поста.</p>
+<div class="feed"><div class="no">Доброе утро, друзья!</div><div class="ok">BUY XAUUSD 4133.48 SL 4121.08</div><div class="no">Разбор недели в 20:00</div></div></div>
+<div class="card film-cube-face film-cube-template" style="--d:6.8"><div class="ch"><span class="ico solid-icon"><img src="icons/file-text.svg" alt=""></span><h3>По шаблону</h3></div><p>Одно правило для каждого нового поста.</p>
+<div class="feed"><div class="ok">LONG · вход · SL · TP</div><div class="ok">SHORT · вход · SL · TP</div></div></div>
+</div></div>
+</section>
+<!-- 6 -->
+<section class="s">
+<h2 class="a" style="--d:.1">Не только Buy и Sell</h2>
+<div class="grid">
+<div class="cap a" style="--d:.8"><span class="ico solid-icon"><img src="icons/trending-up.svg" alt=""></span><b>Рыночные ордера</b><small>Buy и Sell по рынку</small></div>
+<div class="cap a" style="--d:1.8"><span class="ico solid-icon"><img src="icons/target.svg" alt=""></span><b>Лимитные ордера</b><small>Вход по нужной цене</small></div>
+<div class="cap a" style="--d:3"><span class="ico solid-icon"><img src="icons/shield-check.svg" alt=""></span><b>SL / TP</b><small>Ставятся автоматически</small></div>
+<div class="cap a" style="--d:4.2"><span class="ico solid-icon"><img src="icons/history.svg" alt=""></span><b>История сделок</b><small>Всё под рукой</small></div>
+</div>
+</section>
+<!-- 7: the same signal, immediately copied by the bot -->
+<section class="s" id="bot-scene">
+<h2 id="bot-title">Один сигнал. Два сценария.</h2>
+<div id="bot-network">
+<svg class="bot-wire" viewBox="0 0 344 60" aria-hidden="true"><defs><mask id="port-wire-mask"><rect width="344" height="60" fill="white"/><rect x="16" width="48" height="60" fill="black"/><rect x="148" width="48" height="60" fill="black"/><rect x="280" width="48" height="60" fill="black"/></mask></defs><g mask="url(#port-wire-mask)"><path d="M40 28H304"/><path id="bot-wire-lit" d="M40 28H304"/><circle id="bot-packet" cx="40" cy="28" r="3"/></g></svg>
+<div class="bot-port" id="port-telegram"><span class="port-icon telegram plain-icon"><svg viewBox="64 64 384 384" aria-label="Telegram"><circle cx="256" cy="256" r="192" fill="#2aabee"/><path d="M200 279c-14 9-22 8-34 5s-21-6-33-10-16-13 5-21q167-73 194-81c19-6 24 2 22 17q-7 60-24 151c-3 17-11 31-36 14l-62-42q-14-10-5-20c13-15 36-33 67-65q5-5 3-8t-8 1" fill="#fff"/></svg></span><b>Telegram</b><small>Сигнал</small></div>
+<div class="bot-port" id="port-bot"><span class="port-icon neural plain-icon"><div class="lv-symbol"><img src="brand/mini.png" alt="LV Copy Trader" width="1254" height="1254" decoding="async"></div></span><b>LV Copy Trader</b><small>Распознаёт</small></div>
+<div class="bot-port" id="port-mt"><span class="port-icon plain-icon"><img src="icons/metatrader.svg" alt=""></span><b>MetaTrader 5</b><small>Открывает</small></div>
+</div>
+<div id="bot-replay-note"><span>ТОТ ЖЕ СИГНАЛ <b id="bot-side">BUY · XAUUSD</b></span><span>АВТОКОПИРОВАНИЕ</span></div>
+<div id="bot-result"><div><small>ВХОД БОТА</small><strong id="bot-entry">—</strong></div><div><small>ТЕКУЩИЙ РЕЗУЛЬТАТ</small><strong id="bot-distance">—</strong></div></div>
+</section>
+<!-- 8: always-on monitoring, no stack of cards -->
+<section class="s" id="watch-scene" aria-labelledby="watch-title"><div class="watch-content"><div class="watch-night"><span>ВАШ ВЕЧЕР</span><strong id="night-time">23:59</strong><img src="icons/moon.svg" alt=""></div><div id="watch-orbit"><div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div><div class="orbit-ring ring-three"></div><div class="watch-sweep"></div><div class="watch-core"><div class="lv-symbol"><img src="brand/icon.png" alt="LV Copy Trader" width="1254" height="1254" decoding="async"></div><strong>24/7</strong><span><i></i>СОЕДИНЕНИЕ АКТИВНО</span></div><div class="watch-satellite sat-tg"><img src="icons/telegram-mark.svg" alt=""><span>Telegram</span></div><div class="watch-satellite sat-ai"><img src="icons/ai.svg" alt=""><span>Распознавание</span></div><div class="watch-satellite sat-mt"><img src="icons/metatrader.svg" alt=""><span>MetaTrader 5</span></div></div><h2 id="watch-title" class="a" style="--d:.4">Ваш вечер — свободен.<br> <span class="acc">Ручной перенос не нужен.</span></h2><p class="watch-description a" style="--d:1">Вы смотрите сериал. Бот смотрит канал.</p></div></section>
+<!-- 9 -->
+<section class="s" id="outro-scene">
+<div class="outro-lockup"><h1 class="a outro-brand" style="--d:.15"><span class="lv-wordmark"><img src="brand/logo.png" alt="LV Copy Trader" width="2172" height="724" decoding="async"></span></h1><span class="outro-rule a" style="--d:.35" aria-hidden="true"></span><p class="a outro-release" style="--d:.55">Скоро</p></div>
+</section>
+</div>
+<div id="caption-zone" aria-hidden="true"><div id="cap"></div></div><div id="bar"></div>
+<div id="fade"></div><div id="hud"><button id="mm" aria-label="Музыка">♪</button><button id="mv" aria-label="Озвучка">🎙</button></div>
+<div id="ctl">Нажмите — пауза</div>
+<div id="safe-guide"><i></i></div><div id="start"><div class="tag">Промо-ролик · 9:16 · звук включён</div><h1 class="start-brand"><span class="lv-wordmark"><img src="brand/logo.png" alt="LV Copy Trader" width="2172" height="724" decoding="async"></span></h1><div class="opts"><button id="tm2"></button><button id="tv2"></button></div><label class="setting-label" for="language">Язык</label><select id="language" aria-label="Язык"><option value="ru">Русский</option><option value="uz">O‘zbekcha</option><option value="en">English</option></select><select id="vsel" aria-label="Голос"></select><button id="go">▶ Смотреть</button><p>Нажмите на видео, чтобы поставить на паузу.<br>Котировки и сделки — демонстрация.</p></div>
+</div>
+<div id="top-chrome" aria-hidden="true"></div>
+<div id="player-panel" hidden aria-label="Управление воспроизведением">
+<div class="player-times"><span id="elapsed-time">00:00</span><span id="total-time">01:42</span></div>
+<input id="seek" type="range" min="0" max="102" step="0.01" value="0" aria-label="Перемотка видео">
+<div class="player-actions"><div class="transport"><button id="back" aria-label="Назад на 5 секунд">−5</button><button id="resume" aria-label="Продолжить">▶</button><button id="forward" aria-label="Вперёд на 5 секунд">+5</button></div><div id="audio-controls"></div></div>
+</div></main>
+<script src="audio/narration.js?v=0d19ac539ec6"></script>
+<script src="audio/narration-uz.js?v=f90951cbb981"></script>
+<script src="audio/narration-en.js?v=1e9c43ffff97"></script>
+<script src="card-relief.js?v=4e610c971c34"></script>
+<script src="film-motion.js?v=cb43e5c58fab"></script>
+<script src="index-inline-1.js"></script>
+</body>
+</html>

@@ -24,7 +24,30 @@ textarea {
   text-decoration: none;
 }
 .brand-mark {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
   flex: none;
+  width: 32px;
+  height: 32px;
+  background: #030405;
+  border-radius: 6px;
+}
+.brand-mark > img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 116%;
+  max-width: none;
+  height: auto;
+  transform: translate(-50%, -48%);
+  filter: none;
+}
+.brand-mark--logo { width: 190px; height: 38px; }
+.brand-mark--logo > img { width: 100%; transform: translate(-50%, -50%); }
+.brand-mark--icon > img { width: 100%; }
+@media (max-width: 600px) {
+  .brand .brand-mark--logo { width: 142px; height: 32px; }
 }
 .brand-secondary {
   color: var(--text-dim);
@@ -439,7 +462,7 @@ textarea {
     font-size: 13px;
     gap: 8px;
   }
-  .workspace-header .brand-mark {
+  .workspace-header .brand-mark:not(.brand-mark--logo) {
     width: 28px;
     height: 28px;
   }

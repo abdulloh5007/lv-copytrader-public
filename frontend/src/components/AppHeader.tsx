@@ -63,11 +63,8 @@ export function AppHeader({
     <>
       <header className="workspace-header">
         <div className="workspace-header__row">
-          <Link to="/" className="brand">
-            <BrandMark />
-            <span>
-              LV <span className="brand-secondary">Copytrader</span>
-            </span>
+          <Link to="/" className="brand" aria-label="LV Copy Trader">
+            <BrandMark variant="logo" />
           </Link>
           <span className="workspace-divider" aria-hidden="true" />
           <span className="workspace-label">{t('workspace.label')}</span>

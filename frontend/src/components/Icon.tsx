@@ -57,24 +57,12 @@ export function Icon({
     </svg>
   );
 }
-export function BrandMark() {
+const brandImages = {"logo": "logo-web-7452514048.webp", "mini": "mini-web-313fed6a2d.webp", "icon": "icon-web-459b2dba50.webp"};
+
+export function BrandMark({ variant = 'mini' }: { variant?: 'mini' | 'icon' | 'logo' }) {
   return (
-    <svg
-      className="brand-mark"
-      width="32"
-      height="32"
-      viewBox="0 0 32 32"
-      aria-hidden="true"
-    >
-      <rect width="32" height="32" rx="10" fill="currentColor" />
-      <path
-        d="M9 10v12h6m1-12 4 12 4-12"
-        fill="none"
-        stroke="var(--bg)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <span className={`brand-mark brand-mark--${variant}`} aria-hidden="true">
+      <img src={`/assets/brand/${brandImages[variant]}`} width={variant === 'logo' ? 380 : 96} height={variant === 'logo' ? 127 : 96} alt="" decoding="async" />
+    </span>
   );
 }

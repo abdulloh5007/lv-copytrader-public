@@ -18,12 +18,10 @@ export function PublicLayout({
     <div
       className={demo ? 'public-layout public-layout--demo' : 'public-layout'}
     >
+      <a className="public-skip" href="#public-main">{t('public.skip')}</a>
       <header className="public-header">
-        <Link to={demo ? '/demo' : '/waitlist'} className="brand">
-          <BrandMark />
-          <span>
-            LV <span className="brand-secondary">Copytrader</span>
-          </span>
+        <Link to={demo ? '/demo' : '/waitlist'} className="brand" aria-label="LV Copy Trader">
+          <BrandMark variant="logo" />
         </Link>
         <div className="public-header__actions">
           <Preferences />
@@ -31,11 +29,11 @@ export function PublicLayout({
             className="btn btn--sm"
             to={login || demo ? '/waitlist' : '/login'}
           >
-            {t(login || demo ? 'waitlist.link' : 'login.submit')}
+            {t(login || demo ? 'waitlist.link' : 'public.operator_login')}
           </Link>
         </div>
       </header>
-      <main className="public-main" id="public-main">
+      <main className="public-main" id="public-main" tabIndex={-1}>
         {children}
       </main>
       <footer className="public-footer">
