@@ -5,6 +5,13 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Private CI configuration isolation
+
+- CI removes owner `.env` files from its disposable checkout before running tools/tests.
+  Private restore configuration no longer changes test Host validation or supplies owner
+  credentials to the test process. Production configuration and checks remain unchanged.
+- Found by inspecting the first private Actions run; the public run passed all checks.
+
 ### Publication verification policy
 
 - Agent instructions now require version/export checks before publication and inspection of
