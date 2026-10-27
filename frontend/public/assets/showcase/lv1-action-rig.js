@@ -1,3 +1,4 @@
+import {armPose} from './lv1-arm-kinematics.js?v=1';
 /* Continuous activity poses, skinned with the existing approved robot artwork. */
 const NS='http://www.w3.org/2000/svg';
 const idleURL=new URL('pets/lv1/walk-rig-pose-e636832997a2.png',import.meta.url).href;
@@ -22,7 +23,8 @@ export function createActivityRig(){
  const id='lv-activity-'+(++serial),svg=document.createElementNS(NS,'svg');svg.classList.add('lumi-action-rig');svg.setAttribute('viewBox','0 0 192 208');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');
  svg.innerHTML=`<defs>${Object.entries(clip).map(([name,path])=>`<clipPath id="${id}-${name}"><path d="${path}" fill-rule="evenodd" clip-rule="evenodd"/></clipPath>`).join('')}<linearGradient id="${id}-glass" x2="0.3" y2="1"><stop stop-color="#051321"/><stop offset=".55" stop-color="#01080f"/><stop offset="1" stop-color="#06111d"/></linearGradient></defs>`;
  function group(parent,name){const g=document.createElementNS(NS,'g');g.dataset.part=name;parent.append(g);return g;}
- function art(parent,name,mask,row=null){const g=group(parent,name),cut=group(g,'skin'),img=document.createElementNS(NS,'image');cut.setAttribute('clip-path',`url(#${id}-${mask})`);img.setAttribute('href',row===null?idleURL:atlasURL);img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',row===null?idleURL:atlasURL);img.setAttribute('width',row===null?'192':'768');img.setAttribute('height',row===null?'208':'1664');if(row!==null)img.setAttribute('y',String(-row*208));cut.append(img);return g;}
+ const atlasImages=[];
+ function art(parent,name,mask,row=null){const g=group(parent,name),cut=group(g,'skin'),img=document.createElementNS(NS,'image');cut.setAttribute('clip-path',`url(#${id}-${mask})`);if(row===null){img.setAttribute('href',idleURL);img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',idleURL);}else atlasImages.push(img);img.setAttribute('width',row===null?'192':'768');img.setAttribute('height',row===null?'208':'1664');if(row!==null)img.setAttribute('y',String(-row*208));cut.append(img);return g;}
  const standing=group(svg,'standing'),parts={};
  for(const name of ['farUpper','farLower','farThigh','farShin','farFoot','nearThigh','nearShin','nearFoot','torso','head','nearUpper','nearLower'])parts[name]=art(standing,name,name);
  const face=group(parts.head,'face');face.innerHTML=`<path d="M80 53Q106 48 136 52L136 79Q111 87 81 81Z" fill="url(#${id}-glass)"/><path d="M83 55Q108 50 132 54" fill="none" stroke="#75bafa" stroke-opacity=".08"/>`;
@@ -34,21 +36,32 @@ export function createActivityRig(){
  const money=group(standing,'money'),stack=group(money,'stack'),note=group(money,'note');
  for(let i=0;i<3;i++){const img=document.createElementNS(NS,'image');img.setAttribute('href',billURL);img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',billURL);img.setAttribute('width','26');img.setAttribute('height','17');img.setAttribute('x',String(-9+i*2));img.setAttribute('y',String(-11-i*2));stack.append(img);}
  const single=document.createElementNS(NS,'image');single.setAttribute('href',billURL);single.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',billURL);single.setAttribute('width','29');single.setAttribute('height','19');single.setAttribute('x','-9');single.setAttribute('y','-17');note.append(single);
+ const guns=group(standing,'cash-guns'),nearGun=group(guns,'near-gun'),farGun=group(guns,'far-gun');
+ const gunArt='<path d="M-4-7 H16 Q20-7 20-3 V2 H7 L5 11 H-2 L0 2 H-4 Z" fill="#142c40" stroke="#83c5ed" stroke-width="1.4" stroke-linejoin="round"/><path d="M0-8 H14 V-12 H3 Z" fill="#8fd6ab" stroke="#d9f7df" stroke-width=".8"/><path d="M6-10 H12 M3-3 H14" stroke="#d6f5ff" stroke-width="1.2" stroke-linecap="round"/><circle cx="3" cy="5" r="1.3" fill="#57baff"/>';
+ nearGun.innerHTML=gunArt;farGun.innerHTML=gunArt;
  const working=group(svg,'working'),workBody=art(working,'body','workBody',3),workHead=art(working,'head','seatedHead',3),workHand=art(working,'hand','workHand',3);
  const sleeping=group(svg,'sleeping'),sleepBody=art(sleeping,'body','sleepBody',4),sleepHead=art(sleeping,'head','seatedHead',4);
  let lastClock=null,currentState='idle',lastHands={near:[60,157],far:[137,157]};
- const pose={nearX:60,nearY:157,farX:137,farY:157,head:0,bob:1,joy:0,anger:0,dizzy:0,sit:0,work:0,sleep:0,money:0,jump:0};
+ const angle=(a,b)=>Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;
+ const rest={nearUpper:angle(bone.near.shoulder,bone.near.elbow),nearLower:angle(bone.near.elbow,bone.near.hand),farUpper:angle(bone.far.shoulder,bone.far.elbow),farLower:angle(bone.far.elbow,bone.far.hand)};
+ const pose={nearX:60,nearY:157,farX:137,farY:157,head:0,bob:1,joy:0,anger:0,dizzy:0,sit:0,work:0,sleep:0,money:0,jump:0,...rest,guns:0};
  function render(state,time,clock,reduced=false){
   const dt=lastClock===null?1/60:clamp(clock-lastClock,0,.1);lastClock=clock;const t=reduced?0:time;
-  const target={nearX:60,nearY:157,farX:137,farY:157,head:Math.sin(t*1.5)*1.1,bob:1+Math.sin(t*2)*.5,joy:0,anger:0,dizzy:0,sit:0,work:0,sleep:0,money:0,jump:0};
-  if(state==='waving'){const entry=smooth(t/.4);target.farX=lerp(137,149+Math.sin(t*7)*5,entry);target.farY=lerp(157,76+Math.cos(t*7)*2,entry);target.head=-2;}
-  if(state==='happy'){target.nearX=70;target.nearY=120+Math.sin(t*7)*3;target.farX=130;target.farY=119-Math.sin(t*7)*3;target.joy=1;target.bob=2+Math.sin(t*5)**2*2;target.head=Math.sin(t*2)*2;}
-  if(state==='annoyed'){const palm=smooth((t-.15)/.7)*(1-smooth((t-3)/.8));target.nearX=lerp(60,94,palm);target.nearY=lerp(157,77,palm);target.anger=1;target.head=-5+Math.sin(t*1.4);}
+  const target={nearX:60,nearY:157,farX:137,farY:157,head:Math.sin(t*1.5)*1.1,bob:1+Math.sin(t*2)*.5,joy:0,anger:0,dizzy:0,sit:0,work:0,sleep:0,money:0,jump:0,...rest,guns:0};
+  if(state==='waving'){target.farUpper=-10+Math.sin(t*4)*3;target.farLower=-78+Math.sin(t*6)*18;target.head=-2;}
+  if(state==='happy'){target.nearUpper=165;target.nearLower=-70+Math.sin(t*6)*7;target.farUpper=15;target.farLower=-80-Math.sin(t*6)*7;target.joy=1;target.bob=2+Math.sin(t*5)**2*2;target.head=Math.sin(t*2)*2;}
+  if(state==='annoyed'){const palm=smooth((t-.15)/.7)*(1-smooth((t-3)/.8));target.nearUpper=lerp(rest.nearUpper,-15,palm);target.nearLower=lerp(rest.nearLower,-100,palm);target.anger=1;target.head=-5+Math.sin(t*1.4);}
   if(state==='celebrating'){
-   const phase=(t%1.6)/1.6;let hand;
-   const keys=[[0,127,139],[.18,125,134],[.36,124,113],[.56,154,83],[.72,154,83],[1,127,139]];
-   for(let i=1;i<keys.length;i++)if(phase<=keys[i][0]){const a=keys[i-1],b=keys[i],u=smooth((phase-a[0])/(b[0]-a[0]));hand=[lerp(a[1],b[1],u),lerp(a[2],b[2],u)];break;}
-   target.nearX=75;target.nearY=142;target.farX=hand[0];target.farY=hand[1];target.money=1;target.joy=1;target.head=-2;
+   const phase=(t%1.6)/1.6,keys=[[0,68,85],[.2,30,115],[.42,8,20],[.6,-12,-65],[.73,-10,-78],[1,68,85]];
+   let arm=keys[keys.length-1];for(let i=1;i<keys.length;i++)if(phase<=keys[i][0]){const a=keys[i-1],b=keys[i],u=smooth((phase-a[0])/(b[0]-a[0]));arm=[phase,lerp(a[1],b[1],u),lerp(a[2],b[2],u)];break;}
+   target.nearUpper=105;target.nearLower=65;target.farUpper=arm[1];target.farLower=arm[2];target.money=1;target.joy=1;target.head=-2;
+  }
+  if(state==='cash-guns'){
+   const phase=reduced?1.6:t,draw=smooth(phase/.35)*(1-smooth((phase-.5)/.35));
+   const aim=smooth((phase-.55)/.65)*(1-smooth((phase-6)/.7));
+   target.nearUpper=lerp(lerp(rest.nearUpper,100,draw),166,aim);target.nearLower=lerp(lerp(rest.nearLower,45,draw),190+(reduced?0:Math.sin(phase*8)*3),aim);
+   target.farUpper=lerp(lerp(rest.farUpper,83,draw),14,aim);target.farLower=lerp(lerp(rest.farLower,138,draw),-7-(reduced?0:Math.sin(phase*8)*3),aim);
+   target.guns=smooth((phase-.22)/.25)*(1-smooth((phase-6.2)/.45));target.joy=1;target.head=reduced?0:Math.sin(phase*2)*1.5;
   }
   if(state==='shaken'||state==='dizzy'){target.dizzy=1;target.head=reduced?0:Math.sin(t*9)*8;target.sit=state==='dizzy'?(reduced?1:smooth((t-.15)/.55)):0;}
   if(state==='working')target.work=1;
@@ -63,14 +76,15 @@ export function createActivityRig(){
    const b=bone[side],hip=[b.hip[0],b.hip[1]+bodyBob],ankle=[lerp(b.ankle[0],side==='near'?64:145,pose.sit),b.ankle[1]],standingKnee=joint(hip,ankle,length(b.hip,b.knee),length(b.knee,b.ankle));
    const knee=[lerp(standingKnee[0],side==='near'?59:139,pose.sit),lerp(standingKnee[1],179,pose.sit)];
    map(parts[side+'Thigh'],b.hip,b.knee,hip,knee);map(parts[side+'Shin'],b.knee,b.ankle,knee,ankle);parts[side+'Foot'].setAttribute('transform',`translate(${ankle[0]-b.ankle[0]} ${ankle[1]-b.ankle[1]})`);
-   const shoulder=[b.shoulder[0],b.shoulder[1]+bodyBob],hand=[pose[side+'X'],pose[side+'Y']+bodyBob];
-   const elbow=joint(shoulder,hand,length(b.shoulder,b.elbow),length(b.elbow,b.hand),side==='near'?-1:1);
+   const shoulder=[b.shoulder[0],b.shoulder[1]+bodyBob];
+   const {elbow,hand}=armPose(shoulder,length(b.shoulder,b.elbow),length(b.elbow,b.hand),pose[side+'Upper'],pose[side+'Lower']);
    map(parts[side+'Upper'],b.shoulder,b.elbow,shoulder,elbow);map(parts[side+'Lower'],b.elbow,b.hand,elbow,hand);lastHands[side]=hand;
   }
   const blinkPhase=t%4.6,open=reduced?1:blinkPhase>4.32?1-Math.sin((blinkPhase-4.32)/.28*Math.PI)**2:1;
   face.style.opacity=String(clamp(pose.joy+pose.anger+pose.dizzy+1-open));normal.style.opacity=String(clamp(1-pose.joy-pose.anger-pose.dizzy));happy.style.opacity=String(pose.joy);angry.style.opacity=String(pose.anger);dizzy.style.opacity=String(pose.dizzy);
   normal.children[0].setAttribute('ry',String(Math.max(.6,7*open)));normal.children[1].setAttribute('ry',String(Math.max(.6,6.5*open)));
   money.style.opacity=String(pose.money);stack.setAttribute('transform',`translate(${lastHands.near}) rotate(-18)`);note.setAttribute('transform',`translate(${lastHands.far}) rotate(-35)`);
+  guns.style.opacity=String(pose.guns);nearGun.setAttribute('transform',`translate(${lastHands.near}) scale(-1 1)`);farGun.setAttribute('transform',`translate(${lastHands.far})`);
   const release=(t%1.6)/1.6;note.style.opacity=state==='celebrating'&&release<.5?'1':'0';
   working.setAttribute('transform',`translate(0 ${reduced?0:Math.sin(t*2.2)*.45})`);
   workHead.setAttribute('transform',`rotate(${reduced?0:Math.sin(t*1.6)*1.6} 96 100)`);
@@ -78,5 +92,6 @@ export function createActivityRig(){
   sleeping.setAttribute('transform',`translate(0 ${reduced?0:Math.sin(t*1.3)*.7})`);sleepHead.setAttribute('transform',`rotate(${reduced?0:Math.sin(t*1.1)*1.8} 96 104)`);
   svg.dataset.state=state;svg.dataset.pose=Object.values(pose).map(n=>n.toFixed(3)).join(',');svg.dataset.clock=t.toFixed(3);currentState=state;
  }
- render('idle',0,0,true);return{svg,render,hand:()=>lastHands.far.slice()};
+ function enableAtlas(){for(const image of atlasImages){image.setAttribute('href',atlasURL);image.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',atlasURL);}}
+ render('idle',0,0,true);return{svg,render,enableAtlas,hand:()=>lastHands.far.slice(),hands:()=>({near:lastHands.near.slice(),far:lastHands.far.slice()})};
 }

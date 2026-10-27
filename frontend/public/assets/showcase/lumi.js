@@ -1,4 +1,4 @@
-import {createActivityRig} from './lv1-action-rig.js?v=4';
+import {createActivityRig} from './lv1-action-rig.js?v=5';
 import {createShakeDetector} from './pet-shake.js?v=1';
 import {createWalkRig} from './lv1-walk-rig.js?v=3';
 /* LV-1: original generated artwork and a browser animation controller. */
@@ -22,6 +22,7 @@ const states={
  working:{row:3,sequence:[0,1,2,1,3,2,1,2],fps:4},
  sleeping:{row:4,sequence:[0,1,2,3,2,1],fps:2},
  celebrating:{row:5,sequence:[0,1,2,3],fps:4},
+ 'cash-guns':{row:5,sequence:[0,1,2,3],fps:4},
  happy:{row:6,sequence:[0,1,2,3,1,2,3],fps:4},
  annoyed:{row:7,sequence:[0,1,2,3,3,3],fps:3},
  shaken:{row:7,sequence:[0,1,2,3],fps:4},
@@ -50,16 +51,27 @@ function paintFrame(){const walking=states[state].sheet==='walk',frame=states[st
 function setState(value,seconds=0){if(!states[value])return;state=value;elapsed=0;walkDistance=0;lastPaint=-1;lastToss=-1;stateUntil=seconds?clock()+seconds:0;root.dataset.state=state;paintFrame();}
 function settle(){goal=null;pendingOutcome=null;delete root.dataset.outcome;setState('idle');nextAction=clock()+rand(8,14);}
 function tossMoney(){if(reduced||signal)return;for(let i=0;i<4;i++){const bill=document.createElement('i');bill.className='lumi-bill';const hand=actionRig.hand();bill.style.left=`${hand[0]/192*100}%`;bill.style.top=`${hand[1]/208*100}%`;bill.style.setProperty('--fly-x',`${rand(36,110)}px`);bill.style.setProperty('--fly-y',`${rand(-95,-65)}px`);bill.style.setProperty('--fly-r',`${rand(-160,160)}deg`);bill.style.setProperty('--delay',`${i*.055}s`);bills.append(bill);setTimeout(()=>bill.remove(),2300);}}
+function shootMoney(){
+ if(reduced||signal)return;
+ const hands=actionRig.hands();for(const [side,hand] of Object.entries(hands)){
+  const bill=document.createElement('i');bill.className='lumi-bill lumi-bill--shot';bill.dataset.side=side;bill.style.left=`${hand[0]/192*100}%`;bill.style.top=`${hand[1]/208*100}%`;
+  bill.style.setProperty('--fly-x',`${rand(65,125)*(side==='near'?-1:1)}px`);bill.style.setProperty('--fly-y',`${rand(-70,-20)}px`);bill.style.setProperty('--fly-r',`${rand(-140,140)}deg`);bill.style.setProperty('--delay','0s');bills.append(bill);setTimeout(()=>bill.remove(),2300);
+ }
+}
 function action(value,manual=false){
  if(!atlasAvailable&&(value==='working'||value==='sleeping'))value='waving';
  goal=null;pendingOutcome=null;delete root.dataset.outcome;bills.replaceChildren();bubble.classList.remove('is-visible');bubbleUntil=0;
- const duration={waving:3.2,working:6.8,sleeping:manual?10:16,celebrating:4,happy:4,annoyed:4}[value];if(!duration)return;
+ if(value==='cash-guns'&&!reduced){
+  const area=bounds(),margin=Math.min(size*.75,(area.right-area.left)/2),target=Math.max(area.left+margin,Math.min(x,area.right-margin));
+  if(Math.abs(target-x)>3){goal={x:target,y,after:'cash-guns'};setState(target>x?'walk-right':'walk-left');nextAction=Infinity;wake();return;}
+ }
+ const duration={waving:3.2,working:6.8,sleeping:manual?10:16,celebrating:4,'cash-guns':7,happy:4,annoyed:4}[value];if(!duration)return;
  setState(value,duration);decisionIndex++;root.dataset.actionId=String(decisionIndex);
  if(value==='waving')speak(t.hello,duration);
  if(value==='working')pendingOutcome=Math.random()<.7?'TP':'SL';
  nextAction=Infinity;wake();
 }
-function randomAction(){const options=['waving','working','sleeping','celebrating'].filter(s=>s!==lastRandom);const choice=options[Math.floor(Math.random()*options.length)];lastRandom=choice;action(choice,true);}
+function randomAction(){const options=['waving','working','sleeping','celebrating','cash-guns','cash-guns'].filter(s=>s!==lastRandom);const choice=options[Math.floor(Math.random()*options.length)];lastRandom=choice;action(choice,true);}
 function finishWork(){
  const outcome=pendingOutcome;pendingOutcome=null;if(!outcome){settle();return;}
  root.dataset.outcome=outcome;
@@ -73,10 +85,10 @@ function walk(){const b=bounds(),target=rand(b.left,b.right);if(Math.abs(target-
 function checkScene(){const current=Number(document.body.dataset.scene??0);if(current===scene)return;scene=current;signal=current===1||current===6;root.dataset.signal=String(signal);pendingOutcome=null;goal=null;bubbleUntil=0;bubble.classList.remove('is-visible');bills.replaceChildren();settle();if(signal){const b=bounds();goal={x:b.left,y:b.bottom,parking:true};}wake();}
 function frame(ms){
  raf=0;if(document.hidden||!loaded)return;const now=ms/1000,rawDT=Math.max(0,now-(lastTime||now)),dt=Math.min(.06,rawDT);lastTime=now;checkScene();
- if(!pointer&&goal){const dx=goal.x-x,dy=goal.y-y,dist=Math.hypot(dx,dy);if(goal.parking){const blend=reduced?1:1-Math.exp(-rawDT*5);x+=dx*blend;y+=dy*blend;if(dist<.6||reduced){x=goal.x;y=goal.y;goal=null;}}else if(!reduced){const step=dt*(size<100?24:32);if(dist<step){x=goal.x;y=goal.y;settle();}else{x+=dx/dist*step;y+=dy/dist*step;walkDistance+=step;}}paintPosition();}
+ if(!pointer&&goal){const dx=goal.x-x,dy=goal.y-y,dist=Math.hypot(dx,dy);if(goal.parking){const blend=reduced?1:1-Math.exp(-rawDT*5);x+=dx*blend;y+=dy*blend;if(dist<.6||reduced){x=goal.x;y=goal.y;goal=null;}}else if(!reduced){const step=dt*(size<100?24:32);if(dist<step){const after=goal.after;x=goal.x;y=goal.y;goal=null;if(after)action(after);else settle();}else{x+=dx/dist*step;y+=dy/dist*step;walkDistance+=step;}}paintPosition();}
  if(bubbleUntil&&now>bubbleUntil){bubble.classList.remove('is-visible');bubbleUntil=0;}
- if(!pointer){if(stateUntil&&now>stateUntil){if(state==='working')finishWork();else settle();}else if(!signal&&!reduced&&!stateUntil&&now>nextAction){const choices=['walk','walk','working','waving','sleeping','celebrating'];const choice=choices[Math.floor(Math.random()*choices.length)];if(choice==='walk')walk();else action(choice);}}
- if(!reduced){elapsed+=rawDT;paintFrame();if(state==='celebrating'&&!signal){const cycle=Math.floor((elapsed-.8)/1.6);if(cycle>=0&&cycle!==lastToss){lastToss=cycle;tossMoney();}}}
+ if(!pointer){if(stateUntil&&now>stateUntil){if(state==='working')finishWork();else settle();}else if(!signal&&!reduced&&!stateUntil&&now>nextAction){const choices=['walk','walk','working','waving','sleeping','celebrating','cash-guns','cash-guns','cash-guns'];const choice=choices[Math.floor(Math.random()*choices.length)];if(choice==='walk')walk();else action(choice);}}
+ if(!reduced){elapsed+=rawDT;paintFrame();if(state==='celebrating'&&!signal){const cycle=Math.floor((elapsed-.8)/1.6);if(cycle>=0&&cycle!==lastToss){lastToss=cycle;tossMoney();}}else if(state==='cash-guns'&&!signal&&elapsed>=1.3&&elapsed<5.9){const cycle=Math.floor((elapsed-1.3)/.24);if(cycle!==lastToss){lastToss=cycle;shootMoney();}}}
  wake();
 }
 function wake(){if(!destroyed&&!raf&&!document.hidden&&loaded)raf=requestAnimationFrame(frame);}
@@ -102,10 +114,14 @@ function showPet(fallback=false){
 }
 // The small standing pose makes the companion appear quickly; the larger atlas is optional.
 const posePreload=new Image(),atlas=new Image();posePreload.decoding='async';atlas.decoding='async';
-posePreload.onload=()=>showPet(false);posePreload.onerror=()=>{poseFailed=true;if(atlasAvailable)showPet(true);};
+let atlasRequested=false,atlasIdle=0;
+function loadAtlas(){if(destroyed||atlasRequested)return;atlasRequested=true;actionRig.enableAtlas();atlas.src=artURL;}
+posePreload.onload=()=>showPet(false);posePreload.onerror=()=>{poseFailed=true;if(atlasAvailable)showPet(true);else loadAtlas();};
 atlas.onload=()=>{atlasAvailable=true;if(poseFailed)showPet(true);};
 atlas.onerror=()=>{atlasAvailable=false;};
-posePreload.src=new URL('pets/lv1/walk-rig-pose-e636832997a2.png',import.meta.url).href;atlas.src=artURL;
+posePreload.src=new URL('pets/lv1/walk-rig-pose-e636832997a2.png',import.meta.url).href;
+// Larger activity artwork is fetched during idle time after the page and the pet appear.
+const atlasTimer=setTimeout(()=>{if('requestIdleCallback' in window)atlasIdle=window.requestIdleCallback(loadAtlas,{timeout:1500});else loadAtlas();},1800);
 
-return ()=>{destroyed=true;controller.abort();langObserver.disconnect();cancelAnimationFrame(raf);atlas.onload=null;atlas.onerror=null;posePreload.onload=null;posePreload.onerror=null;root.remove();};
+return ()=>{destroyed=true;controller.abort();langObserver.disconnect();cancelAnimationFrame(raf);clearTimeout(atlasTimer);if(atlasIdle&&'cancelIdleCallback' in window)window.cancelIdleCallback(atlasIdle);atlas.onload=null;atlas.onerror=null;posePreload.onload=null;posePreload.onerror=null;root.remove();};
 }

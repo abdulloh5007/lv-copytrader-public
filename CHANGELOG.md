@@ -5,6 +5,16 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### LV-1 arm movement and cash launchers
+
+- Rebuilt the greeting and money-throwing motions with smoothly articulated arms whose
+  upper and lower sections retain their lengths.
+- Added a frequent two-handed cash-launcher animation, with bills flying to both sides;
+  the companion moves clear of the screen edge first and respects reduced-motion settings.
+- Deferred the companion until after page load and load its activity artwork later, while
+  retaining cached artwork and the companion's state across page navigation.
+- Checked arm geometry, page-load timing, animations and navigation in Chromium and WebKit.
+
 ### LV-1 sleep and shake animation
 
 - Replaced the sleep emoji with softly floating `Z` letters.
