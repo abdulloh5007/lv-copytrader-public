@@ -32,10 +32,11 @@ import type { ReactElement, ReactNode } from 'react';
 import { en } from './en';
 import type { TranslationKey } from './en';
 import { ru } from './ru';
+import { uz } from './uz';
 
 /* ─────────────────────────── types and constants ────────────────────────── */
 
-export type Locale = 'en' | 'ru';
+export type Locale = 'en' | 'ru' | 'uz';
 
 /** Any dictionary key, with autocomplete, while still allowing computed keys. */
 export type TKey = TranslationKey | (string & {});
@@ -44,24 +45,24 @@ export type TranslationVars = Record<string, string | number | null | undefined>
 
 export type Translate = (key: TKey, vars?: TranslationVars) => string;
 
-export const LOCALES: readonly Locale[] = ['en', 'ru'] as const;
+export const LOCALES: readonly Locale[] = ['en', 'ru', 'uz'] as const;
 
 /** Self-labelled, deliberately NOT translated — a language picker names itself. */
-export const LOCALE_LABELS: Record<Locale, string> = { en: 'English', ru: 'Русский' };
+export const LOCALE_LABELS: Record<Locale, string> = { en: 'English', ru: 'Русский', uz: 'O‘zbekcha' };
 
 /** The key the pre-paint bootstrap in index.html reads and writes. */
 export const LOCALE_STORAGE_KEY = 'sp-locale';
 
 /** BCP-47 tags handed to Intl for each app locale. */
-export const INTL_LOCALES: Record<Locale, string> = { en: 'en-GB', ru: 'ru-RU' };
+export const INTL_LOCALES: Record<Locale, string> = { en: 'en-GB', ru: 'ru-RU', uz: 'uz-UZ' };
 
 /** Rendered where a number or a date is genuinely absent. */
 export const EMPTY_VALUE = '—';
 
-const DICTS: Record<Locale, Record<string, string>> = { en, ru };
+const DICTS: Record<Locale, Record<string, string>> = { en, ru, uz };
 
 export type { TranslationKey };
-export { en, ru };
+export { en, ru, uz };
 
 /* ───────────────────────────── locale detection ─────────────────────────── */
 
@@ -70,6 +71,7 @@ export function normalizeLocale(value: unknown): Locale | null {
   const v = value.trim().toLowerCase();
   if (v.startsWith('ru')) return 'ru';
   if (v.startsWith('en')) return 'en';
+  if (v.startsWith('uz')) return 'uz';
   return null;
 }
 
@@ -135,6 +137,11 @@ function applyLocaleAttribute(locale: Locale): void {
   try {
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('lang', locale);
+      const url = new URL(location.href);
+      if (url.searchParams.has('lang')) {
+        url.searchParams.set('lang', locale);
+        history.replaceState(history.state, '', url.href);
+      }
     }
   } catch {
     // A detached document in a test environment: nothing to apply to.

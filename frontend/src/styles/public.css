@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  overflow: auto;
+  overflow: visible;
 }
 .public-header,
 .public-footer {
@@ -459,3 +459,23 @@
 }
 .waitlist__text-link:hover { text-decoration-color: var(--text); }
 .waitlist__details { border-top: 0; padding-top: 0; gap: 24px; }
+
+/* Keep navigation visible without adding another scroll container. */
+.public-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.public-layout input:not([type="checkbox"]),
+.public-layout select,
+.public-layout textarea { font-size: 16px; }
+.public-footer { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+
+/* Leave room for the translated waitlist action on narrow phones. */
+@media (max-width: 400px) {
+  .public-header { padding-inline: 12px; gap: 4px; }
+  .public-header__actions { gap: 6px; }
+  .public-header .brand-mark--logo { width: clamp(96px, 30vw, 142px); }
+}

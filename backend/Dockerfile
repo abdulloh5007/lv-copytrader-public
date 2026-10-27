@@ -12,7 +12,7 @@
 # =======================================================================================
 # Stage 1 — build the dashboard.
 # =======================================================================================
-FROM node:22-alpine AS frontend
+FROM node:22.23.4-alpine AS frontend
 
 WORKDIR /frontend
 
@@ -23,7 +23,9 @@ COPY frontend/package.json frontend/package-lock.json* frontend/npm-shrinkwrap.j
 
 # `npm ci` is reproducible but requires a lockfile in sync with package.json; fall back to
 # `npm install` when there is none, rather than failing the whole image build.
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
+    npm ci --no-audit --no-fund
 
 COPY frontend/ ./
 
@@ -35,11 +37,11 @@ RUN npm run typecheck && npm test && npm run build
 # =======================================================================================
 # Stage 2 — the backend runtime.
 # =======================================================================================
-FROM python:3.12-slim AS runtime
+FROM python:3.12-alpine3.24 AS runtime
 
 # DATA_DIR holds the SQLite database, downloaded signal images and Telethon session
 # material; FRONTEND_DIST is where FastAPI looks for the built SPA. Both match app/config.py
-# and the values in .env.example, so the container is correct even with no .env at all.
+# and the values in .env.example. Production credentials/signing key arrive at runtime.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -48,15 +50,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/data \
     FRONTEND_DIST=/app/static
 
-# curl serves two purposes: the container healthcheck below, and the sidecar smoke test from
-# BUILD_PROMPT's stage-1 check (`curl -H 'X-SP-Token: …' http://mt5-sidecar:18812/rpc …`),
-# which is run from inside this container because that port is not published to the host.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# Minimal runtime; an optional proxy CA is mounted only during networked build steps.
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
+    apk upgrade --no-cache && apk add --no-cache ca-certificates libstdc++ libffi
 
-# Non-root. The uid is fixed so the sp-data volume keeps stable ownership across rebuilds.
-RUN useradd --system --create-home --uid 10001 --shell /usr/sbin/nologin signalpilot
+RUN addgroup -g 10001 signalpilot \
+ && adduser -D -H -u 10001 -G signalpilot signalpilot
 
 WORKDIR /app
 
@@ -66,17 +66,18 @@ WORKDIR /app
 COPY backend/pyproject.toml ./pyproject.toml
 COPY backend/requirements.lock ./requirements.lock
 COPY backend/app ./app
-RUN pip install --no-cache-dir -c requirements.lock .
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    pip install --no-cache-dir --upgrade pip==26.2.2 && pip install --no-cache-dir -c requirements.lock . && python -m pip uninstall -y pip
 
 # The SPA built in stage 1, served from FRONTEND_DIST.
 COPY --from=frontend /frontend/dist ./static
 
-# /data is a mount point for the named volume; creating and chowning it here means a fresh
-# volume inherits this ownership and the non-root process can write the database. /app must
-# also be writable: when SECRET_KEY is missing, crypto.bootstrap_secret_key() generates one
-# and writes it to /app/.env (app/config.py's container fallback for env_file_path).
+# The data volume stays writable by the fixed non-root uid. Read-only production
+# deployments must explicitly supply SECRET_KEY; writable local development can bootstrap it.
 RUN mkdir -p /data \
- && chown -R signalpilot:signalpilot /app /data
+ && chown -R signalpilot:signalpilot /app /data \
+ && find / -xdev -type f -perm /6000 -exec chmod a-s {} +
 
 USER signalpilot
 
@@ -91,4 +92,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
 #  * --reload re-executes module import in a new event loop, and Telethon re-checks its
 #    loop on every request — that is `RuntimeError: The asyncio event loop must not change
 #    after connection`.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--limit-concurrency", "128"]

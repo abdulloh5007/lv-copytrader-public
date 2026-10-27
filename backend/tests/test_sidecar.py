@@ -308,7 +308,7 @@ def test_sidecar_image_ships_xdotool_and_utf16le_guard() -> None:
     dockerfile = (SIDECAR.parent / "Dockerfile").read_text()
     assert "xdotool" in dockerfile
     assert "scrot" in dockerfile
-    assert "python3-pil" in dockerfile
+    assert "Pillow==13.0.0" in dockerfile
     entry = (SIDECAR.parent / "entrypoint.sh").read_text()
     assert "assert_common_ini_utf16le" in entry
     assert "iconv -f UTF-8 -t UTF-16LE" in entry
@@ -722,3 +722,38 @@ def test_find_red_button_centroid_is_the_off_control_not_green() -> None:
     x, y = found
     assert 90 <= x <= 150
     assert 8 <= y <= 28
+
+
+@pytest.mark.parametrize('value', ['', 'change-me', 'changeme', 'your-token'])
+def test_shipped_rpc_tokens_fail_closed(sidecar, monkeypatch, value):
+    monkeypatch.setattr(sidecar, 'TOKEN', value)
+    handler = SimpleNamespace(headers={'X-SP-Token': value})
+    assert sidecar.RpcHandler._authorized(handler) is False
+    assert sidecar.main() == 2
+
+
+def test_idle_rpc_connection_cannot_block_health(sidecar, monkeypatch):
+    import http.client
+    import socket
+    import threading
+
+    monkeypatch.setattr(sidecar.RpcHandler, "timeout", 0.1)
+    server = sidecar.RpcServer(("127.0.0.1", 0), sidecar.RpcHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with socket.create_connection(server.server_address, timeout=2) as stalled:
+            stalled.sendall(b"GET /health HTTP/1.0\r\nX-Incomplete:")
+            conn = http.client.HTTPConnection(*server.server_address, timeout=2)
+            try:
+                conn.request("GET", "/health")
+                response = conn.getresponse()
+                assert response.status in (200, 503)
+                assert b'"initialized"' in response.read()
+            finally:
+                conn.close()
+            assert stalled.recv(1) == b""
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

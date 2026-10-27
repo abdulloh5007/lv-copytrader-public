@@ -7,3 +7,10 @@
 - lv-copy-trader-mini-dark-v1.png — упрощённый знак без названия, 1254×1254.
 
 Точные промпты выбранных изображений и исходный промпт сохранены в prompts.json. Файлы PNG являются растровыми изображениями.
+
+
+## Transparent vector edition
+
+`logo.svg` and `mark.svg`: hand-redrawn LV monogram, no raster background.
+Wordmark outlined from bundled Manrope ExtraBold; see MANROPE-OFL.txt and VECTOR.md.
+`telegram-plane.svg`: plane from the existing Telegram mark, without its circle.

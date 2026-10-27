@@ -936,16 +936,31 @@ def create_app() -> FastAPI:
     # answered with the dashboard bundle (which renders the login form and posts to
     # /api/auth/login) instead of a 401 the browser would paint as a blank error page.
     app.state.public_demo = PublicDemo(lambda: getattr(app.state, "runtime", None))
-    app.state.login_rate_limiter = LoginRateLimiter()
+    from app.util.auth_state import SessionGuard
+    app.state.auth_sessions = SessionGuard(
+        Path(settings.DATA_DIR) / "auth-sessions.json",
+        lambda: settings.SECRET_KEY or "",
+        lambda: (settings.SP_AUTH_USER, settings.SP_AUTH_PASSWORD),
+    )
+    app.state.login_rate_limiter = LoginRateLimiter(
+        storage_path=Path(settings.DATA_DIR) / "auth-rate.json",
+        secret=lambda: settings.SECRET_KEY or "",
+    )
     app.add_middleware(
         AuthMiddleware,
         username=settings.SP_AUTH_USER,
         password=settings.SP_AUTH_PASSWORD,
-        secret=lambda: settings.SECRET_KEY or "",
+        secret=lambda: app.state.auth_sessions.secret,
+        sessions=app.state.auth_sessions,
+        allow_unconfigured=settings.SP_ALLOW_UNAUTHENTICATED,
         shell=spa_shell,
         limiter=app.state.login_rate_limiter,
     )
     app.add_middleware(DemoGuard, limits=app.state.public_demo.limits)
+    allowed_hosts = [h.strip() for h in settings.SP_ALLOWED_HOSTS.split(",") if h.strip()]
+    if allowed_hosts:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts, www_redirect=False)
     app.add_middleware(
         SecurityMiddleware, frontend_dist=settings.FRONTEND_DIST,
         dev_origins=_dev_cors_origins() if _env_flag(DEV_CORS_ENV) else (),
@@ -960,7 +975,7 @@ def create_app() -> FastAPI:
         log.info("dashboard authentication is ON (user=%s)", settings.SP_AUTH_USER)
     else:
         log.warning(
-            "dashboard authentication is OFF — do not expose this port beyond localhost; "
+            "dashboard credentials are missing — private API remains locked unless explicit dev mode; "
             "set SP_AUTH_USER and SP_AUTH_PASSWORD in .env first"
         )
 

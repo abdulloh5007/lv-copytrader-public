@@ -57,7 +57,9 @@ cp .env.example .env
 Edit `.env` before starting:
 
 - Generate `SECRET_KEY` once with the command below. Keep it with your database.
-- Set a strong `SIDECAR_TOKEN` and `SP_AUTH_PASSWORD`.
+- Set a strong unique `SIDECAR_TOKEN` and `SP_AUTH_PASSWORD`; missing credentials keep private APIs locked.
+- Set `SP_ALLOWED_HOSTS` to your domain plus `localhost,127.0.0.1` for health checks.
+- Leave `SP_ALLOW_UNAUTHENTICATED=false` for every public deployment.
 - Fill in `MT5_LOGIN`, `MT5_PASSWORD`, and your exact `MT5_SERVER` name.
 - For brokers requiring their own MT5 installer, set `MT5_INSTALLER_URL` accordingly.
 

@@ -5,6 +5,126 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Publication verification policy
+
+- Agent instructions now require version/export checks before publication and inspection of
+  GitHub Actions/check statuses for the exact published commits in both repositories.
+- Publication reports must distinguish pushed source, CI results and deployment verification;
+  failed, pending, skipped or unavailable checks must be reported explicitly.
+
+### Pre-publication validation
+
+- Current source passed 671 backend tests in a network-isolated container, 10 frontend
+  tests, frontend typecheck/production build and 13 publishing/snapshot tests.
+- The allowlisted public export passed credential scanning and version consistency checks.
+
+### Story language follows the main website
+
+- Removed the standalone story language switcher. Story pages read the main site's saved
+  EN/RU/UZ preference before rendering and select the matching translated page.
+- Story navigation no longer overwrites the main language preference. Locale redirects
+  retain chapter hashes and internal-navigation welcome suppression; open tabs also follow
+  language changes made on the main site. Without a saved preference, the current URL works.
+- Browser checks cover all nine stored-language/URL combinations, chapter preservation,
+  no visible picker, no welcome replay on redirects, cross-tab changes and direct URL fallback.
+
+### Uzbek interface and translated GitHub link
+
+- Added a complete 774-key Uzbek Latin UI dictionary, Uzbek browser/URL detection,
+  locale persistence and an explicit EN/RU/UZ language picker. Public pages, login,
+  privacy and dashboard strings now share the three-language interface. Added visible
+  EN/RU/UZ links to each standalone story and fixed narrow translated header overflow.
+- Localized the shared GitHub link and accessible name in all three languages, including
+  immediate updates on locale change and language persistence from standalone stories.
+- Removed opacity changes from the floating link: scroll now moves it fully below the
+  viewport and back without fading. Decorative star particle fades are independent.
+- Kept the existing EN/RU Telegram notification preference when saving the Uzbek UI;
+  this website translation does not change trading or notification language support.
+- Validation: typecheck/build, 10 frontend tests including dictionary/placeholder parity,
+  all five public page types in all three languages, instant translated GitHub labels,
+  preference persistence and fully opaque scroll transitions. Header fits 320–390px screens.
+
+### Star effect tuning
+
+- Retuned the GitHub link slide from 1000ms to 520ms with smooth easing.
+- Split the welcome shower into three waves of six stars, 650ms apart; reduced flight
+  height to 42–76px and sideways spread to 16–48px around the button.
+- Browser checks verify six stars per wave, bounded trajectories, scroll timing, no internal
+  navigation replay, reload replay, cleanup and reduced-motion behavior.
+
+### GitHub star welcome effect
+
+- Slowed the floating GitHub link slide to one second with gentler easing and a 14px
+  direction threshold. Added a single short gold-star shower and subtle welcome glow.
+- Internal navigation, SPA route changes and history returns suppress replay; reloads and
+  fresh visits allow it again. Decorative particles clean up automatically and respect
+  reduced motion, background tabs, scrolling and focused fields.
+- Added optional native vibration on supported devices after real user activation and when
+  activating the GitHub link; no synthetic activation or unsupported-browser workaround.
+- Restricted DOM observation to route mounts so live market text does not trigger redraws.
+- Verified build/typecheck, intro particle cleanup, SPA and standalone-story navigation,
+  reload/direct-entry replay, scroll transitions and reduced-motion behavior in Chromium.
+  Native haptic calls were checked with a mocked device API and real user activation;
+  physical vibration remains dependent on browser/device support.
+
+### Transparent vector brand
+
+- Replaced background-backed raster logos in the React app with transparent inline SVG.
+  The LV monogram and outlined wordmark have separate configurable mark/text/highlight
+  colors; text automatically follows the theme. Added standalone SVG downloads and usage.
+- Removed demo integration icon borders, rounded wrappers and brand backgrounds; reused
+  the native Telegram/MetaTrader marks without extra containers around their artwork.
+- Verified typecheck/build, light/dark mobile rendering, transparent SVG paths and independent
+  CSS color changes. Deployed a frontend-only overlay after checking non-root asset access.
+
+### Public navigation and controls
+
+- Removed the waitlist owner sign-in button and email-only hint; kept the header sticky.
+  Email inputs use 16px text to avoid iOS focus zoom, and the data policy opens a new tab.
+- Added one shared fixed GitHub star link to waitlist, demo and all three story languages.
+  It slides out on downward scroll, returns on upward scroll, clears focused form controls,
+  respects safe-area insets and reduced-motion preferences, and remains keyboard accessible.
+- Reused the story's Telegram and MetaTrader artwork in the demo integration strip.
+- Verified types/build, nine frontend tests and mobile browser checks for sticky navigation,
+  scroll direction, form focus, links and loaded artwork; checked all three story languages.
+  Deployed a frontend-only image overlay while retaining existing hashed assets. Verified
+  non-root file access, restored the prior armed state and kept the MT5 container running.
+
+### Security audit — 2026-10-27
+
+- Private APIs now fail closed with missing credentials. Unique signed sessions are bound
+  to current credentials; logout revocation and per-IP/global login budgets survive restart.
+  Active WebSocket streams stop sending private data after session expiry or revocation.
+- Enforced matching Origin scheme, allowed Host values, bounded API request bodies, Telegram
+  image download/time/pixel limits, and additional cloud-token redaction/public export scans.
+- Updated the host Node runtime to 24.22.1; rebuilt Caddy 2.11.7 with Go 1.27.3,
+  x/net 0.60.0 and chi 5.4.0. Hardened proxy headers, timeouts, service permissions and SSH
+  connection throttling; closed unnecessary IPv6 service exposure.
+- Rebuilt the backend on patched Alpine/Python with no root privileges, read-only root,
+  dropped capabilities, bounded processes/concurrency/logs and no runtime package installer.
+- Restricted live MT5 RPC access to the backend. The portable Compose deployment separates
+  its RPC network and passes only MT5/RPC variables, avoiding backend and Telegram secrets.
+  Added sidecar token placeholder rejection, stalled-client timeout, privilege restrictions
+  and current Pillow; applied 40 available Wine-image package updates.
+- Prepared pinned GitHub Actions dependency/security checks, Dependabot updates and a private
+  reporting policy. Repository-side security settings require authenticated GitHub access.
+- Validation: 666 isolated backend tests, 38 focused sidecar tests, frontend types/build and
+  nine tests, 13 publishing/snapshot tests; npm/pip audits and the deployed backend image
+  scan report zero known vulnerabilities. Verified live logout replay denial, proxy-IP
+  sanitization, Host/Origin/body rejection and RPC isolation without any test broker orders.
+- Wine/GUI image findings are tracked separately in the security audit; vendor-unfixed
+  findings must not be represented as a clean scan of the entire installation.
+
+### Deployment
+
+- Applied the rich-notification backend to the running application; the previous container
+  still used the legacy OPENED template despite updated source. Rebuilt the runtime image,
+  retained current public assets, prepared rollback and a consistent database backup,
+  paused new entries for replacement and restored the prior armed state after readiness.
+- Verified the deployed notifier hash, MT5/Telegram connection, remaining open position,
+  145 isolated notification/trading regression tests and a real sendRichMessage test card.
+  MT5 was not restarted and no test orders were executed.
+
 ### Added
 
 - Imported the product-film source, three-language narration, interactive story, LV-1

@@ -57,7 +57,7 @@ the channel is dead.
 | `SIDECAR_TOKEN` | Leaving the shipped `change-me` is refused at boot. It guards the endpoint that places orders; a default everyone can read is not a secret. `openssl rand -base64 32` |
 | `MT5_SERVER` / `MT5_LOGIN` / `MT5_PASSWORD` | The MT5 dot goes green from these alone, with no interactive step |
 | `MT5_INSTALLER_URL` | **Exness (and most brokers): set this to the broker-branded installer from your Personal Area.** The generic MetaQuotes installer frequently ships without your broker in its server list, and the login then fails looking exactly like wrong credentials |
-| `SP_AUTH_USER` / `SP_AUTH_PASSWORD` | Empty means no authentication. Fine on localhost, catastrophic behind a tunnel: the dashboard carries the ARM switch and manual order entry |
+| `SP_AUTH_USER` / `SP_AUTH_PASSWORD` | Missing credentials lock private APIs. Set both; only isolated local development may explicitly set SP_ALLOW_UNAUTHENTICATED=true |
 | `SECRET_KEY` | Leave empty — it is generated on first start and written back. It decrypts every stored secret, so once real data exists, **do not lose it** |
 
 ---
@@ -310,3 +310,24 @@ changes.
 
 This behaviour ships on the `upgraded` branch. It is not a deploy step and it does not
 touch a VPS by itself.
+
+
+### MT5 isolation and security maintenance
+
+The standard Compose configuration puts the terminal on a separate `trading` bridge;
+only the application also joins that bridge. Do not attach public/tunnel services there.
+Pass only MT5/RPC settings to the terminal, never the entire backend environment file.
+Keep RPC unpublished and use a random token. Restrict privileges and rotate container logs.
+
+For an existing deployment using fixed container IPs on one bridge, install an equivalent
+host bridge firewall rule allowing the RPC destination/port only from the backend IP.
+`DOCKER-USER` alone is insufficient when bridge netfilter is unavailable. Persist rules
+with a dedicated service and verify both allowed and denied container namespaces after
+recreation. Update the rule when changing network addresses.
+
+Before replacing a terminal image, pause new entries and confirm no running execution
+pipeline or open positions/pending orders. Keep a rollback image and a private terminal
+volume backup. Preserve the Wine/FEX version and compatibility mounts. Verify MT5 and
+Telegram readiness before restoring the previous armed state. Never submit test orders.
+Audit the Wine image separately from the backend; vendor-unfixed packages require tracking.
+See [the dated audit](docs/SECURITY-AUDIT.md) for scope and remaining limitations.

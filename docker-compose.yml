@@ -24,6 +24,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file: .env
+    networks: [default, trading]
     environment:
       FORWARDED_ALLOW_IPS: "${SP_TRUSTED_PROXY_IPS:-127.0.0.1}"
     ports:
@@ -33,6 +34,19 @@ services:
       - lvCT-data:/data
     depends_on:
       - mt5-sidecar
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=128m,mode=1777
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-m", "app.cli.healthcheck"]
@@ -51,7 +65,28 @@ services:
       context: ./mt5-sidecar
       dockerfile: Dockerfile
     image: signalpilot/mt5-sidecar:local
-    env_file: .env
+    networks: [trading]
+    # The terminal must never receive backend, Telegram or website credentials.
+    environment:
+      SIDECAR_TOKEN: "${SIDECAR_TOKEN:?Set a strong SIDECAR_TOKEN}"
+      SIDECAR_HOST: 0.0.0.0
+      SIDECAR_PORT: "18812"
+      MT5_LOGIN: "${MT5_LOGIN:-}"
+      MT5_PASSWORD: "${MT5_PASSWORD:-}"
+      MT5_SERVER: "${MT5_SERVER:-}"
+      MT5_INSTALLER_URL: "${MT5_INSTALLER_URL:-https://download.mql5.com/cdn/web/metaquotes.ltd/mt5/mt5setup.exe}"
+      SP_INIT_CREDENTIALS_FIRST: "${SP_INIT_CREDENTIALS_FIRST:-0}"
+      WATCHDOG_SECONDS: "${WATCHDOG_SECONDS:-15}"
+      WATCHDOG_MAX_RESTARTS: "${WATCHDOG_MAX_RESTARTS:-5}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
     volumes:
       # Wine prefix, the MT5 install and Config/servers.dat + Config/accounts.dat. This is
       # what makes the first login-through-VNC happen once, forever: a fresh Wine prefix has
@@ -155,3 +190,8 @@ volumes:
   lvCT-x11:
     external: true
     name: lvct_lvCT-x11
+
+# Keep RPC off the public-app/tunnel bridge while retaining broker Internet access.
+networks:
+  default: {}
+  trading: {}

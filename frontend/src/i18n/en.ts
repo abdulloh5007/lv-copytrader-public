@@ -8,8 +8,8 @@
  * Numbers, prices, currencies and dates are NOT formatted here — they go through
  * formatNumber / formatPrice / formatCurrency / formatDateTime / formatRelative.
  *
- * `ru.ts` is typed as `Record<keyof typeof en, string>`, so a key added here
- * without a Russian counterpart is a COMPILE error, not a runtime hole.
+ * `ru.ts` and `uz.ts` cover every English key, so a key added here
+ * without a translated counterpart is a COMPILE error, not a runtime hole.
  */
 export const en = {
   'demo.watching_one': 'watching',

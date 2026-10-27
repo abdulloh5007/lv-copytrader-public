@@ -13,6 +13,8 @@ from PIL import Image, UnidentifiedImageError
 from app.errors import IngestError
 
 _JPEG_MEDIA_TYPE = "image/jpeg"
+MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_SOURCE_PIXELS = 25_000_000
 
 # Pillow >= 9.1 exposes the filters on Image.Resampling; the flat aliases stay for older builds.
 _RESAMPLE = getattr(Image, "Resampling", Image).LANCZOS
@@ -31,9 +33,13 @@ def _open_rgb(path: str) -> Image.Image:
     """Open an image file and return it as a loaded, fully opaque RGB copy."""
     if not os.path.isfile(path):
         raise IngestError(f"image file not found: {path}", detail={"path": path})
+    if os.path.getsize(path) > MAX_SOURCE_IMAGE_BYTES:
+        raise IngestError("source image exceeds the 20 MiB safety limit")
     source: Image.Image | None = None
     try:
         source = Image.open(path)
+        if source.width * source.height > MAX_SOURCE_PIXELS:
+            raise IngestError("source image exceeds the 25 megapixel safety limit")
         source.load()
         mode = source.mode
         if mode in ("RGBA", "LA") or (mode == "P" and "transparency" in source.info):
@@ -50,7 +56,7 @@ def _open_rgb(path: str) -> Image.Image:
             f"cannot decode image {path}: unrecognised image format",
             detail={"path": path},
         ) from exc
-    except (OSError, ValueError, SyntaxError) as exc:
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError) as exc:
         raise IngestError(f"cannot decode image {path}: {exc}", detail={"path": path}) from exc
     finally:
         if source is not None:
@@ -132,7 +138,7 @@ def _image_dimensions_sync(path: str) -> tuple[int, int]:
             f"cannot decode image {path}: unrecognised image format",
             detail={"path": path},
         ) from exc
-    except (OSError, ValueError, SyntaxError) as exc:
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError) as exc:
         raise IngestError(f"cannot decode image {path}: {exc}", detail={"path": path}) from exc
     return int(width), int(height)
 

@@ -8,7 +8,7 @@
 #
 # Wine Mono is deliberately NOT installed: WINEDLLOVERRIDES=mscoree= suppresses the prompt,
 # and nothing in this container is .NET.
-FROM debian:stable-slim
+FROM debian:trixie-slim
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
@@ -58,7 +58,7 @@ RUN set -euxo pipefail; \
 #                toolbar toggle is off even if common.ini AllowLiveTrading=1 is set.
 #   scrot        captures the toolbar band so we can click the red Algo Trading
 #                control by root coordinates (Wine windowactivate is unsupported).
-#   python3-pil  finds that red control in the screenshot.
+#   Pillow       pinned in an isolated venv; finds the red control in the screenshot.
 # --------------------------------------------------------------------------------------
 RUN set -euxo pipefail; \
     apt-get update; \
@@ -69,7 +69,7 @@ RUN set -euxo pipefail; \
         xdotool \
         scrot \
         python3 \
-        python3-pil \
+        python3-venv \
         cabextract \
         winbind \
         libc-bin \
@@ -77,9 +77,14 @@ RUN set -euxo pipefail; \
         procps \
         curl \
         ca-certificates; \
+    python3 -m venv /opt/pixel-tools; \
+    /opt/pixel-tools/bin/pip install --no-cache-dir Pillow==13.0.0; \
+    /opt/pixel-tools/bin/pip uninstall -y pip; \
+    apt-get upgrade -y; \
     rm -rf /var/lib/apt/lists/*
 
-ENV WINEARCH=win64 \
+ENV PATH="/opt/pixel-tools/bin:${PATH}" \
+    WINEARCH=win64 \
     WINEPREFIX=/config/.wine \
     WINEDEBUG=-all \
     WINEDLLOVERRIDES="mscoree=" \

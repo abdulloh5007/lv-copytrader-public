@@ -72,7 +72,7 @@ export default function Waitlist() {
     }
   }
   return (
-    <PublicLayout>
+    <PublicLayout star>
       <section className="waitlist" aria-labelledby={`${id}-title`}>
         <div className="release-tag">
           <span className="release-tag__dot" />
@@ -134,7 +134,7 @@ export default function Waitlist() {
                   required
                   disabled={phase === 'busy'}
                   aria-invalid={invalidEmail || undefined}
-                  aria-describedby={`${id}-email-hint${error ? ` ${id}-error` : ''}`}
+                  aria-describedby={error ? `${id}-error` : undefined}
                 />
                 <button
                   className="btn btn--primary"
@@ -149,7 +149,6 @@ export default function Waitlist() {
                   <Icon name="arrow" size={16} />
                 </button>
               </div>
-              <p className="waitlist__email-hint" id={`${id}-email-hint`}>{t('waitlist.email_hint')}</p>
               <div className="honeypot" aria-hidden="true">
                 <label htmlFor={`${id}-website`}>Website</label>
                 <input
@@ -171,7 +170,7 @@ export default function Waitlist() {
                 />
                 <span>
                   {t('waitlist.consent')}{' '}
-                  <Link to="/privacy">{t('waitlist.privacy_link')}</Link>
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">{t('waitlist.privacy_link')}</Link>
                 </span>
               </label>
               {error && (

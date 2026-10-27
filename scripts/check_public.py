@@ -14,6 +14,9 @@ FORBIDDEN_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.session', '.pem', '.key', 
                       '.pfx', '.exe', '.dll', '.pyc', '.bak', '.zip', '.gz', '.tar', '.7z'}
 PATTERNS = {
     'GitHub token': re.compile(rb'(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})'),
+    'GoDaddy PAT': re.compile(rb'gd_pat_[A-Za-z0-9_]{30,}'),
+    'Google API key': re.compile(rb'AIza[A-Za-z0-9_-]{35}'),
+    'Stripe live key': re.compile(rb'(?:sk|rk)_live_[A-Za-z0-9]{20,}'),
     'Telegram bot token': re.compile(rb'\b[0-9]{6,15}:[A-Za-z0-9_-]{30,}\b'),
     'provider API key': re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{24,}\b'),
     'AWS access key': re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b'),

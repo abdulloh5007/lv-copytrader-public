@@ -78,19 +78,7 @@ export default function Demo() {
         <section className="demo-flow" aria-label={t('demo.flow_label')}>
           <div className="demo-flow__step">
             <div className="demo-flow__icon">
-              <svg
-                viewBox="0 0 24 24"
-                width="23"
-                height="23"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="m3 11 18-7-4 16-5-5-3 3v-5l8-6-10 6z" />
-              </svg>
+              <img src="/assets/brand/telegram-plane.svg" width="26" height="26" alt="" />
             </div>
             <div>
               <strong>Telegram</strong>
@@ -114,19 +102,7 @@ export default function Demo() {
           </span>
           <div className="demo-flow__step">
             <div className="demo-flow__icon">
-              <svg
-                viewBox="0 0 24 24"
-                width="23"
-                height="23"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6" />
-              </svg>
+              <img src="/assets/showcase/icons/metatrader.svg" width="26" height="26" alt="" />
             </div>
             <div>
               <strong>MetaTrader 5</strong>

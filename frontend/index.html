@@ -23,25 +23,31 @@
       untranslated. Copied verbatim from BUILD_PROMPT §10; keep it that way.
     -->
     <script>
+      var storedTheme = null, storedLocale = null;
       try {
-        var storedTheme = localStorage.getItem('sp-theme');
-        var t = (storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : null) ||
-                (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        var storedLocale = localStorage.getItem('sp-locale');
-        var l = (storedLocale === 'ru' || storedLocale === 'en' ? storedLocale : null) ||
-                ((navigator.language || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en');
-        document.documentElement.setAttribute('data-theme', t);
-        document.documentElement.setAttribute('lang', l);
-      } catch (e) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.documentElement.setAttribute('lang', 'en');
-      }
+        storedTheme = localStorage.getItem('sp-theme');
+        storedLocale = localStorage.getItem('sp-locale');
+      } catch (e) {}
+      var t = (storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : null) ||
+              (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      var languages = ['en', 'ru', 'uz'];
+      var requested = new URLSearchParams(location.search).get('lang');
+      var detected = (navigator.languages || [navigator.language || 'en'])
+        .map(function (value) { return value.toLowerCase().split('-')[0]; })
+        .find(function (value) { return languages.indexOf(value) >= 0; });
+      var l = (languages.indexOf(requested) >= 0 ? requested : null) ||
+              (languages.indexOf(storedLocale) >= 0 ? storedLocale : null) || detected || 'en';
+      document.documentElement.setAttribute('data-theme', t);
+      document.documentElement.setAttribute('lang', l);
+      try { localStorage.setItem('sp-locale', l); } catch (e) {}
     </script>
 
     <meta name="description" content="Open-source Telegram-to-MetaTrader 5 automation on your VPS. Explore the demo or join the waitlist for a simpler installation." />
     <link rel="icon" type="image/webp" sizes="96x96" href="/assets/brand/icon-web-459b2dba50.webp" />
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-180.png" />
-  </head>
+  <link rel="stylesheet" href="/assets/ui/public-star.css?v=884324e6ac53">
+<script defer src="/assets/ui/public-star.js?v=ee826ba30b6e"></script>
+</head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

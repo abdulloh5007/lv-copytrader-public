@@ -141,12 +141,14 @@ class Settings(BaseSettings):
     SIDECAR_TOKEN: str = "change-me"
     DATA_DIR: str = "/data"
     LOG_LEVEL: str = "INFO"
-    #: HTTP Basic credentials for the dashboard and the whole API. Empty = auth disabled,
-    #: which is the right default for a localhost-only deployment. Set BOTH before exposing
+    #: Credentials for private APIs. Missing credentials fail closed by default.
+    #: Explicit unauthenticated development mode is for isolated localhost use only. Set BOTH before exposing
     #: the app through a tunnel, a proxy or a forwarded port: the dashboard carries the ARM
     #: switch, the kill switch and manual order entry.
     SP_AUTH_USER: str = ""
     SP_AUTH_PASSWORD: str = ""
+    SP_ALLOW_UNAUTHENTICATED: bool = False
+    SP_ALLOWED_HOSTS: str = ""
     FRONTEND_DIST: str = "/app/static"
 
     # --- sidecar RPC transport ---------------------------------------------------------

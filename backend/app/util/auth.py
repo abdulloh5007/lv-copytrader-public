@@ -37,6 +37,7 @@ import binascii
 import hashlib
 import hmac
 import math
+from pathlib import Path
 import secrets
 import time
 from typing import Any, Awaitable, Callable, Final
@@ -104,24 +105,29 @@ def resolve_secret(secret: str | None) -> str:
     return secret or FALLBACK_SECRET
 
 
-def _sign(secret: str, issued_at: int) -> str:
-    """Return `issued_at.signature`, bound to the server's SECRET_KEY."""
-    payload = str(int(issued_at)).encode("ascii")
-    digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-    return f"{payload.decode('ascii')}.{digest}"
+def _sign(secret: str, issued_at: int, nonce: str | None = None) -> str:
+    """Sign a unique, bounded, domain-separated session token."""
+    nonce = secrets.token_hex(16) if nonce is None else nonce
+    payload = f"{int(issued_at)}.{nonce}"
+    digest = hmac.new(secret.encode(), ("lvct-cookie-v2:" + payload).encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{digest}"
 
 
 def valid_cookie(secret: str, value: str | None, max_age: int = COOKIE_MAX_AGE) -> bool:
-    """Check a cookie's signature and age in constant time."""
-    if not value or len(value) > 128 or not value.isascii() or "." not in value:
+    if not value or len(value) > 128 or not value.isascii():
         return False
-    issued, _, digest = value.partition(".")
-    if not issued.isdigit() or len(issued) > 12:
+    parts = value.split(".")
+    if len(parts) != 3:
         return False
-    expected = _sign(secret, int(issued)).partition(".")[2]
-    if not hmac.compare_digest(digest, expected):
+    issued, nonce, digest = parts
+    if not issued.isdigit() or len(issued) > 12 or len(nonce) != 32 or len(digest) != 64:
         return False
-    return 0 <= (time.time() - int(issued)) <= max_age
+    try:
+        int(nonce, 16)
+    except ValueError:
+        return False
+    expected = _sign(secret, int(issued), nonce).rsplit(".", 1)[1]
+    return hmac.compare_digest(digest, expected) and 0 <= time.time() - int(issued) <= max_age
 
 
 def _cookie_attributes(secure: bool) -> list[str]:
@@ -182,7 +188,7 @@ def basic_credentials_ok(header: str | None, username: str, password: str) -> bo
     Still supported, and deliberately so: the compose healthcheck, ``curl`` and every script
     an operator writes authenticate this way. It is only the *challenge* that is gone.
     """
-    if not header or not header.lower().startswith("basic "):
+    if not username or not password or not header or len(header) > 8192 or not header.lower().startswith("basic "):
         return False
     try:
         raw = base64.b64decode(header.split(" ", 1)[1].strip(), validate=True).decode("utf-8")
@@ -221,15 +227,41 @@ class LoginRateLimiter:
         max_attempts: int = MAX_FAILED_ATTEMPTS,
         window: float = LOCKOUT_SECONDS,
         clock: Callable[[], float] = time.time,
+        storage_path: Path | None = None,
+        secret: Callable[[], str] = lambda: "",
+        global_max_attempts: int = 120,
     ) -> None:
         self.max_attempts = int(max_attempts)
         self.window = float(window)
         self._clock = clock
         self._failures: dict[str, tuple[int, float]] = {}
+        self.storage_path, self._secret = storage_path, secret
+        self.global_max_attempts = global_max_attempts
+        self._global: tuple[int, float] = (0, 0.0)
+        if storage_path:
+            from app.util.auth_state import load_state
+            state = load_state(storage_path)
+            self._failures = {k: (int(v[0]), float(v[1])) for k, v in state.get("failures", {}).items()}
+            self._global = tuple(state.get("global", [0, 0.0]))
+            self._prune(self._clock())
 
-    def retry_after(self, client: str) -> int:
+    def _key(self, client: str) -> str:
+        if not self.storage_path:
+            return client
+        return hmac.new(resolve_secret(self._secret()).encode(), ("login-peer:" + client).encode(), hashlib.sha256).hexdigest()
+
+    def _persist(self) -> None:
+        if self.storage_path:
+            from app.util.auth_state import save_state
+            save_state(self.storage_path, {"failures": self._failures, "global": self._global})
+
+    def retry_after(self, client: str, *, include_global: bool = True) -> int:
         """Return the seconds this client must wait, or 0 when it may try right now."""
         now = self._clock()
+        count, started = self._global
+        if include_global and count >= self.global_max_attempts and now - started < self.window:
+            return max(1, int(math.ceil(self.window - (now - started))))
+        client = self._key(client)
         entry = self._failures.get(client)
         if entry is None:
             return 0
@@ -247,17 +279,24 @@ class LoginRateLimiter:
     def record_failure(self, client: str) -> int:
         """Count one failed attempt and return the client's new failure total."""
         now = self._clock()
+        client = self._key(client)
+        count, started = self._global
+        if now - started >= self.window:
+            count, started = 0, now
+        self._global = (count + 1, started)
         failures, last = self._failures.get(client, (0, 0.0))
         if now - last > self.window:
             failures = 0
         failures += 1
         self._failures[client] = (failures, now)
         self._prune(now)
+        self._persist()
         return failures
 
     def record_success(self, client: str) -> None:
         """Forget every failure recorded for this client."""
-        self._failures.pop(client, None)
+        if self._failures.pop(self._key(client), None) is not None:
+            self._persist()
 
     def _prune(self, now: float) -> None:
         """Drop entries whose window has passed, so a scan cannot grow the table forever."""
@@ -354,6 +393,8 @@ class AuthMiddleware:
         secret: str | Callable[[], str],
         shell: Callable[[], Any] | None = None,
         limiter: LoginRateLimiter | None = None,
+        sessions: Any = None,
+        allow_unconfigured: bool = False,
     ) -> None:
         self.app = app
         self.username = username
@@ -361,6 +402,8 @@ class AuthMiddleware:
         self._secret = secret
         self.shell = shell
         self.limiter = limiter or LoginRateLimiter()
+        self.sessions = sessions
+        self.allow_unconfigured = allow_unconfigured
 
     @property
     def secret(self) -> str:
@@ -369,8 +412,8 @@ class AuthMiddleware:
 
     @property
     def enabled(self) -> bool:
-        """Auth is off when no credentials are configured; localhost use stays frictionless."""
-        return bool(self.username and self.password)
+        """Missing credentials lock private routes unless dev mode was explicitly enabled."""
+        return bool(self.username and self.password) or not self.allow_unconfigured
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if not self.enabled or scope.get("type") not in ("http", "websocket"):
@@ -388,19 +431,23 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        by_cookie = valid_cookie(self.secret, _cookie(scope, COOKIE_NAME))
+        if not self.username or not self.password:
+            await self._reject(scope, receive, send)
+            return
+        cookie = _cookie(scope, COOKIE_NAME)
+        by_cookie = self.sessions.valid(cookie) if self.sessions else valid_cookie(self.secret, cookie)
         authorization = _header(scope, b"authorization")
         peer = str((scope.get("client") or ("unknown", 0))[0])
-        if authorization and not by_cookie and self.limiter.retry_after(peer):
+        by_basic = basic_credentials_ok(authorization, self.username, self.password)
+        if authorization and not by_cookie and self.limiter.retry_after(peer, include_global=not by_basic):
             if scope["type"] == "websocket":
                 await self._reject(scope, receive, send)
                 return
             from starlette.responses import JSONResponse
-            wait = self.limiter.retry_after(peer)
+            wait = self.limiter.retry_after(peer, include_global=not by_basic)
             response = JSONResponse({"error": {"code": "too_many_attempts", "message": "Try again later", "detail": {"retry_after": wait}}}, status_code=429, headers={"Retry-After": str(wait)})
             await response(scope, receive, send)
             return
-        by_basic = basic_credentials_ok(authorization, self.username, self.password)
         if authorization and not by_cookie:
             if by_basic:
                 self.limiter.record_success(peer)
@@ -411,6 +458,23 @@ class AuthMiddleware:
             await self._reject(scope, receive, send)
             return
 
+        if scope["type"] == "websocket" and by_cookie:
+            from starlette.websockets import WebSocketDisconnect
+            closed = False
+            async def guarded_send(message):
+                nonlocal closed
+                valid = self.sessions.valid(cookie) if self.sessions else valid_cookie(self.secret, cookie)
+                if message.get("type") in {"websocket.accept", "websocket.send"} and (closed or not valid):
+                    if not closed:
+                        closed = True
+                        await send({"type": "websocket.close", "code": WS_POLICY_VIOLATION})
+                    raise WebSocketDisconnect(WS_POLICY_VIOLATION)
+                await send(message)
+            try:
+                await self.app(scope, receive, guarded_send)
+            except WebSocketDisconnect:
+                pass
+            return
         if scope["type"] == "websocket" or by_cookie:
             await self.app(scope, receive, send)
             return

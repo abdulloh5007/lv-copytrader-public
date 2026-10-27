@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { brandPaths } from './brandPaths';
 
 export type IconName =
   | 'sun'
@@ -57,12 +58,28 @@ export function Icon({
     </svg>
   );
 }
-const brandImages = {"logo": "logo-web-7452514048.webp", "mini": "mini-web-313fed6a2d.webp", "icon": "icon-web-459b2dba50.webp"};
+interface BrandMarkProps {
+  variant?: 'mini' | 'icon' | 'logo';
+  markColor?: string;
+  textColor?: string;
+  highlightColor?: string;
+}
 
-export function BrandMark({ variant = 'mini' }: { variant?: 'mini' | 'icon' | 'logo' }) {
+export function BrandMark({ variant = 'mini', markColor, textColor, highlightColor }: BrandMarkProps) {
+  const style = {
+    '--brand-mark': markColor,
+    '--brand-text': textColor,
+    '--brand-highlight': highlightColor,
+  } as CSSProperties;
   return (
-    <span className={`brand-mark brand-mark--${variant}`} aria-hidden="true">
-      <img src={`/assets/brand/${brandImages[variant]}`} width={variant === 'logo' ? 380 : 96} height={variant === 'logo' ? 127 : 96} alt="" decoding="async" />
+    <span className={`brand-mark brand-mark--${variant}`} aria-hidden="true" style={style}>
+      <svg viewBox={`0 0 ${variant === 'logo' ? brandPaths.width : 210} 100`} fill="none" focusable="false">
+        <path d={brandPaths.highlight} fill="var(--brand-highlight, var(--brand-text, currentColor))" />
+        <path d={brandPaths.mark} fill="var(--brand-mark, #219df3)" />
+        {variant === 'logo' && brandPaths.wordmark.map((part, index) => (
+          <path key={index} d={part.d} fill={part.fill === 'mark' ? 'var(--brand-mark, #219df3)' : 'var(--brand-text, currentColor)'} />
+        ))}
+      </svg>
     </span>
   );
 }

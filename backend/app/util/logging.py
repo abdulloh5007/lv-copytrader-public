@@ -79,6 +79,12 @@ _BEARER_RE = re.compile(r"\b(?P<scheme>bearer|basic)\s+(?P<token>[A-Za-z0-9\-._~
 _BOT_TOKEN_RE = re.compile(r"\bbot\d{5,}:[A-Za-z0-9_\-]{20,}", re.IGNORECASE)
 
 
+_CLOUD_TOKEN_RE = re.compile(
+    r"(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|"
+    r"gd_pat_[A-Za-z0-9_]{30,}|AIza[A-Za-z0-9_-]{35}|(?:sk|rk)_live_[A-Za-z0-9]{20,})"
+)
+
+
 def register_secret(value: str | None) -> None:
     """Register a secret literal so every later log line masks it."""
     if not value:
@@ -120,6 +126,7 @@ def redact(text: str) -> str:
         if literal in out:
             out = out.replace(literal, _REDACTED)
     out = _BOT_TOKEN_RE.sub("bot" + _REDACTED, out)
+    out = _CLOUD_TOKEN_RE.sub(_REDACTED, out)
     out = _KV_RE.sub(_kv_replacement, out)
     out = _BEARER_RE.sub(_bearer_replacement, out)
     return out

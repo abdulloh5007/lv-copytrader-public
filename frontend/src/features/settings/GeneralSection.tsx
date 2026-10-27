@@ -149,7 +149,7 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
       const updated = await putGeneral({
         default_risk_percent: toNumber(risk),
         ladder_volume: toNumber(ladderVolume),
-        locale,
+        locale: locale === 'uz' ? (slice.locale === 'ru' ? 'ru' : 'en') : locale,
         orders_per_signal: toInt(orders),
         order_lot_size: toNumber(lotSize),
         use_fixed_order_lots: fixedLots,
@@ -170,6 +170,7 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
     fixedLots,
     ladderVolume,
     locale,
+    slice.locale,
     lotSize,
     onSettings,
     orders,
@@ -434,6 +435,7 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
           options={[
             { value: 'en', label: t('settings.english') },
             { value: 'ru', label: t('settings.russian') },
+            { value: 'uz', label: 'O‘zbekcha' },
           ]}
           onChange={onLocale}
         />

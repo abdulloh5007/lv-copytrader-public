@@ -72,7 +72,8 @@ class SecurityMiddleware:
             origin = headers.get("origin")
             try:
                 parsed = urlsplit(origin or "")
-                same_origin = parsed.scheme in ("http", "https") and parsed.netloc.lower() == headers.get("host", "").lower()
+                expected_scheme = "https" if scope.get("scheme") in ("https", "wss") else "http"
+                same_origin = parsed.scheme == expected_scheme and parsed.netloc.lower() == headers.get("host", "").lower()
             except ValueError:
                 same_origin = False
             if (origin and not same_origin and origin not in self.dev_origins) or (
@@ -82,10 +83,14 @@ class SecurityMiddleware:
 
         # Buffer only the two tiny, public JSON forms. Count actual bytes as well as
         # Content-Length, so chunked requests cannot bypass the limit.
-        if is_http and scope.get("method") == "POST" and scope.get("path", "").rstrip("/") in ("/api/auth/login", "/api/waitlist", "/api/demo/presence"):
-            limit = 256 if scope.get("path", "").rstrip("/") == "/api/demo/presence" else 8192
+        if is_http and scope.get("method") not in {"GET", "HEAD", "OPTIONS"} and scope.get("path", "").startswith("/api/"):
+            path = scope.get("path", "").rstrip("/")
+            limit = 256 if path == "/api/demo/presence" else 8192 if path in {"/api/auth/login", "/api/waitlist"} else 1024 * 1024
             try:
-                if int(headers.get("content-length", "0")) > limit:
+                length = int(headers.get("content-length", "0"))
+                if length < 0:
+                    return await reject(400, "bad_request", "Invalid content length")
+                if length > limit:
                     return await reject(413, "payload_too_large", "Request body is too large")
             except ValueError:
                 return await reject(400, "bad_request", "Invalid content length")

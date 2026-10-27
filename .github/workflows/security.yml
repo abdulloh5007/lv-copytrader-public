@@ -1,0 +1,30 @@
+name: Security checks
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.22.1'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: npm ci --prefix frontend
+      - run: npm audit --prefix frontend --audit-level=low
+      - run: npm run --prefix frontend typecheck && npm test --prefix frontend && npm run --prefix frontend build
+      - run: python -m pip install -c backend/requirements.lock ./backend pytest pytest-asyncio pip-audit
+      - run: pip-audit -r backend/requirements.lock --disable-pip --no-deps
+      - run: python -m pytest -q tests/test_auth.py tests/test_security_hardening.py tests/test_waitlist_security.py tests/test_public_demo.py
+        working-directory: backend

@@ -141,3 +141,9 @@ def _telegram_seed_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_settings, "TELEGRAM_API_HASH", "", raising=False)
     monkeypatch.setattr(app_settings, "TELEGRAM_SESSION", "", raising=False)
     monkeypatch.setattr(app_settings, "TELEGRAM_PHONE", "", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _explicit_test_only_open_api(monkeypatch):
+    """Legacy non-auth tests opt into local development mode; production defaults stay closed."""
+    monkeypatch.setattr(app_settings, "SP_ALLOW_UNAUTHENTICATED", True)

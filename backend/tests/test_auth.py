@@ -481,7 +481,7 @@ async def test_the_websocket_opens_with_avalid_cookie(secured) -> None:
 
     from app.config import settings as app_settings
 
-    cookie = _sign(app_settings.SECRET_KEY or "", int(time.time()))
+    cookie = _sign(app.state.auth_sessions.secret, int(time.time()))
     messages: list[dict[str, Any]] = []
     sent = {"done": False}
 
@@ -540,10 +540,12 @@ def test_a_forged_cookie_is_rejected() -> None:
     assert valid_cookie("the-real-secret", _sign("the-real-secret", now - 999_999)) is False
 
 
-def test_auth_is_off_when_no_credentials_are_set() -> None:
+def test_missing_credentials_fail_closed_unless_explicit_dev_opt_in() -> None:
     """Localhost use stays frictionless; the warning at startup is what flags it."""
     middleware = AuthMiddleware(lambda *a: None, username="", password="", secret="x")
-    assert middleware.enabled is False
+    assert middleware.enabled is True
+    dev = AuthMiddleware(lambda *a: None, username="", password="", secret="x", allow_unconfigured=True)
+    assert dev.enabled is False
 
 
 def test_the_open_prefix_cannot_be_walked_out_of() -> None:

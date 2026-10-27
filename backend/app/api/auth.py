@@ -141,7 +141,7 @@ async def login(request: Request, payload: AuthLoginRequest) -> JSONResponse:
     response = JSONResponse(status_code=200, content={"ok": True, "username": username})
     response.headers.append(
         "set-cookie",
-        session_cookie_header(resolve_secret(settings.SECRET_KEY), secure=_secure(request)),
+        session_cookie_header(request.app.state.auth_sessions.secret, secure=_secure(request)),
     )
     return response
 
@@ -149,6 +149,7 @@ async def login(request: Request, payload: AuthLoginRequest) -> JSONResponse:
 @router.post("/logout", response_model=OkResponse, summary="Clear the session cookie")
 async def logout(request: Request) -> JSONResponse:
     """Sign the operator out. Always succeeds, whether or not anyone was signed in."""
+    request.app.state.auth_sessions.revoke(request.cookies.get(COOKIE_NAME))
     response = JSONResponse(status_code=200, content={"ok": True})
     response.headers.append("set-cookie", clear_cookie_header(secure=_secure(request)))
     return response
@@ -167,21 +168,22 @@ async def status(request: Request) -> AuthStatusOut | JSONResponse:
     deployment or a login form nobody can satisfy on an open one.
     """
     username, password = _configured()
-    if not (username and password):
+    if not (username and password) and settings.SP_ALLOW_UNAUTHENTICATED:
         # Nothing to log in to: every request is already allowed through.
         return AuthStatusOut(authenticated=True, required=False, username=None)
 
-    authenticated = valid_cookie(resolve_secret(settings.SECRET_KEY), request.cookies.get(COOKIE_NAME))
+    authenticated = bool(username and password) and request.app.state.auth_sessions.valid(request.cookies.get(COOKIE_NAME))
     authorization = request.headers.get("authorization")
     if authorization and not authenticated:
         limiter = _limiter(request)
         peer = _client(request)
-        wait = limiter.retry_after(peer)
+        basic_ok = basic_credentials_ok(authorization, username, password)
+        wait = limiter.retry_after(peer, include_global=not basic_ok)
         if wait:
             response = _error(429, "too_many_attempts", "Try again later", {"retry_after": wait})
             response.headers["Retry-After"] = str(wait)
             return response
-        authenticated = basic_credentials_ok(authorization, username, password)
+        authenticated = basic_ok
         if authenticated:
             limiter.record_success(peer)
         else:

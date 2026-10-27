@@ -8,10 +8,12 @@ export function PublicLayout({
   children,
   login = false,
   demo = false,
+  star = false,
 }: {
   children: ReactNode;
   login?: boolean;
   demo?: boolean;
+  star?: boolean;
 }) {
   const t = useT();
   return (
@@ -25,17 +27,18 @@ export function PublicLayout({
         </Link>
         <div className="public-header__actions">
           <Preferences />
-          <Link
+          {(login || demo) && <Link
             className="btn btn--sm"
-            to={login || demo ? '/waitlist' : '/login'}
+            to="/waitlist"
           >
-            {t(login || demo ? 'waitlist.link' : 'public.operator_login')}
-          </Link>
+            {t('waitlist.link')}
+          </Link>}
         </div>
       </header>
       <main className="public-main" id="public-main" tabIndex={-1}>
         {children}
       </main>
+      {(star || demo) && <div data-public-star />}
       <footer className="public-footer">
         <span>© {new Date().getFullYear()} LV Copytrader</span>
         <Link to="/privacy">{t('waitlist.privacy')}</Link>

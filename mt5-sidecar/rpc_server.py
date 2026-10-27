@@ -97,6 +97,7 @@ def _env_float(name: str, default: float) -> float:
 HOST = _env_str("SIDECAR_HOST", "0.0.0.0")
 PORT = _env_int("SIDECAR_PORT", 18812)
 TOKEN = _env_str("SIDECAR_TOKEN", "")
+INSECURE_TOKENS = {"change-me", "changeme", "your-token"}
 
 # Forward slashes, always. Backslashes in mt5.initialize(path=...) are a documented cause of
 # initialize() returning False with last_error() == (-10005, 'IPC timeout') — BUILD_PROMPT §1.
@@ -1861,6 +1862,9 @@ def dispatch(method: Any, params: Any) -> dict[str, Any]:
 
 
 class RpcHandler(BaseHTTPRequestHandler):
+    # A stalled header/body must not monopolize the single IPC-serving HTTP thread.
+    timeout = 10.0
+
     server_version = "lv-copytrader-sidecar/1.0"
     sys_version = ""
     # HTTP/1.0: one request per connection. With a single-threaded server, a keep-alive
@@ -1890,7 +1894,7 @@ class RpcHandler(BaseHTTPRequestHandler):
             log.debug("client disconnected before the reply was written")
 
     def _authorized(self) -> bool:
-        if not TOKEN:
+        if not TOKEN or TOKEN.lower() in INSECURE_TOKENS:
             return False
         provided = self.headers.get("X-SP-Token") or ""
         return hmac.compare_digest(provided.encode("utf-8", "ignore"), TOKEN.encode("utf-8"))
@@ -2001,9 +2005,9 @@ def _install_signal_handlers(server: HTTPServer) -> None:
 
 
 def main() -> int:
-    if not TOKEN:
+    if not TOKEN or TOKEN.lower() in INSECURE_TOKENS:
         log.critical(
-            "SIDECAR_TOKEN is empty — refusing to start. An unauthenticated /rpc endpoint is "
+            "SIDECAR_TOKEN is empty or a shipped placeholder — refusing to start. An unauthenticated /rpc endpoint is "
             "order_send on an open port; set SIDECAR_TOKEN in .env and restart."
         )
         return 2

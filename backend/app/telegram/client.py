@@ -1323,6 +1323,11 @@ class TelegramService:
         """
         if message is None or not _has_downloadable_image(message):
             return None
+        from app.util.images import MAX_SOURCE_IMAGE_BYTES
+        file = getattr(message, "file", None)
+        size = getattr(file, "size", 0) or getattr(getattr(message, "document", None), "size", 0) or 0
+        if size > MAX_SOURCE_IMAGE_BYTES:
+            raise IngestError("signal image exceeds the 20 MiB download limit")
         client = self._require_client()
         directory = Path(dest_dir)
         directory.mkdir(parents=True, exist_ok=True)
@@ -1333,12 +1338,21 @@ class TelegramService:
             extension = tg_utils.get_extension(media) or ""
         except Exception as exc:  # noqa: BLE001 - an unknown mime is not a failure
             log.debug("telegram_extension_unknown error=%s", exc)
-        if not extension:
+        if extension.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"}:
             extension = ".jpg"
         target = directory / f"{uuid4().hex}{extension}"
 
         try:
-            saved = await client.download_media(message, file=str(target))
+            def check_progress(received, total):
+                if received > MAX_SOURCE_IMAGE_BYTES or total and total > MAX_SOURCE_IMAGE_BYTES:
+                    raise IngestError("signal image exceeds the 20 MiB download limit")
+            async with asyncio.timeout(60):
+                saved = await client.download_media(message, file=str(target), progress_callback=check_progress)
+            if saved and Path(saved).stat().st_size > MAX_SOURCE_IMAGE_BYTES:
+                raise IngestError("signal image exceeds the 20 MiB download limit")
+        except (IngestError, TimeoutError):
+            target.unlink(missing_ok=True)
+            raise IngestError("signal image download exceeded its safety limit") from None
         except RPCError as exc:
             log.warning(
                 "telegram_download_failed message_id=%s error=%s",
