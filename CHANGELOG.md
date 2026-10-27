@@ -5,6 +5,80 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### LV-1 sleep and shake animation
+
+- Replaced the sleep emoji with softly floating `Z` letters.
+- Rapid back-and-forth dragging makes LV-1 dizzy: its eyes spiral, it sits down with
+  rotating stars above its head, then recovers. Ordinary drags do not trigger the effect.
+- Kept the action silent, preserved its state across public-page navigation, and added a
+  still seated pose for reduced motion. Verified mouse, touch, WebKit and gesture detection.
+
+### Signal-scene hold interaction
+
+- Prevented browser text selection and touch callouts in the signal scenes while retaining
+  normal scrolling, and clear existing selection when 4× hold begins.
+- Stop 4× exactly when the simulated trade reaches its result, including within a frame;
+  subsequent result and Telegram-notification animations run at their regular speed. A new
+  replay can be accelerated again, but holding after the result cannot restart acceleration.
+- Validated clock boundaries with unit tests and exercised both scenes, selection, replay
+  and post-trade timing in Chromium; checked selection behavior in WebKit.
+
+### Persistent, quieter LV-1 companion
+
+- The companion now uses a single instance across waitlist and demo navigation, preserving
+  its position, current activity and animation rather than greeting again on each page.
+- Limited speech bubbles to a greeting and TP/SL outcomes. Sleep now displays gently
+  rising, swaying sleep marks without a bubble, with reduced-motion support.
+- Added content-addressed pet artwork with long-lived browser caching and retained older
+  versions for open tabs. The website deployer validates hashes before publishing.
+- Verified navigation, TP/SL, quiet actions, sleeping animation and cache reuse in Chromium,
+  plus continuity in WebKit; deployment safety checks pass.
+
+### Demo layout, companion visibility and story previews
+
+- Made LV-1 appear as soon as its small standing image loads, added an atlas fallback and
+  SVG compatibility, and raised its mobile position above the browser's bottom controls.
+- Removed the demo header's waitlist button, centered its title, and moved the three
+  integration icons out of their card while removing their extra descriptions.
+- Replaced the old waitlist thumbnail with localized captures of the first story scene.
+  Added localized 1200×630 Open Graph images and metadata for story link previews.
+- Validated mobile layouts in three languages, WebKit with a delayed atlas and failed pose,
+  and social preview metadata/images with automated tests.
+
+### Story sound and faster signal playback
+
+- Removed the chapter navigation dots from all story language routes; scrolling and keyboard
+  navigation remain available.
+- Added the film-inspired procedural music and signal effects to the story, activated by a
+  user gesture with a localized sound control and a remembered mute preference.
+- Increased held playback to 4× in both signal scenes and show a small `4×` opposite the
+  chart's channel-opened label while holding. Release or movement returns to normal speed.
+- Verified actual Web Audio output, mute persistence, touch playback speed, all three
+  locales, reduced motion and the frontend build/tests in Chromium.
+
+### Independent public-site deployment
+
+- Added a Caddy-served public frontend and a guarded deployment script so updates to
+  waitlist, demo and story can be installed without restarting the trading containers.
+- Preserved API proxying, security headers and CSP; retained previous hashed bundles for
+  open tabs. The deployer validates Caddy, saves a rollback configuration, rejects symlinks
+  and environment files, and restores the old configuration on switch failure.
+- Validated routing and browser behavior against an isolated Caddy instance, plus four
+  deployment safety tests.
+
+### Public-page companion and story finale
+
+- Moved the interactive LV-1 companion to the waitlist and demo pages only; its controls,
+  animations and EN/RU/UZ labels follow the selected website language and clean up on exit.
+- Holding the right side of either signal scene now plays its timeline and market simulation
+  at twice the speed, with a subtle edge shade. Release, movement, navigation or loss of
+  focus returns playback to normal without a speed label.
+- Reworked the final story scene: the logo rises, the title is typed, and the dashed route
+  link, film button and Telegram/LV/MetaTrader icons appear in sequence. Removed the extra
+  final-scene captions and retained full reduced-motion and screen-reader support.
+- Validation: frontend typecheck/build and tests; Chromium checks on mobile and desktop for
+  all three languages, touch/mouse hold and release, navigation cleanup and reduced motion.
+
 ### Private CI configuration isolation
 
 - CI removes owner `.env` files from its disposable checkout before running tools/tests.

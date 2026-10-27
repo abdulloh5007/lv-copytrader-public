@@ -182,10 +182,10 @@ export default function Waitlist() {
             <a className="waitlist__story" href={`/assets/showcase/${locale}/index.html`}>
               <img
                 className="waitlist__story-preview"
-                src="/assets/previews/story.webp"
+                src={`/assets/previews/story-${locale}-20261027.webp`}
                 alt={t('waitlist.story_preview')}
                 width="1200"
-                height="760"
+                height="630"
                 loading="lazy"
                 decoding="async"
               />

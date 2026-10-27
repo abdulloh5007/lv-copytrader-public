@@ -425,7 +425,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 1200 / 760;
+  aspect-ratio: 1200 / 630;
   object-fit: cover;
   border-radius: 22px;
 }

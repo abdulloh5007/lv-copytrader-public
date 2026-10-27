@@ -1,4 +1,6 @@
-import {createFilmMarket} from './market-engine.js?v=60a31ed2bc8b';
+import {createFilmMarket} from './market-engine.js?v=story-speed-4x';
+import {createStoryAudio} from './story-audio.js?v=1';
+import {advanceStoryTime} from './story-speed.js?v=1';
 const {t:tr}=window.LV_I18N;
 window.LV_I18N.apply(document);
 const $ = selector => document.querySelector(selector);
@@ -10,11 +12,13 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const scenes = $$('.scene');
 const chapters = $$('.chapter');
 const chapterNames = [tr('Работает без остановки.'),tr('Рынок не подождал.'),'LV Copy Trader',tr('Ваш выбор. Его скорость.'),tr('Два режима. Один результат.'),tr('Не только Buy и Sell'),tr('Один сигнал. Два сценария.'),tr('Ваш вечер — свободен.'),tr('Вы выбираете канал. Бот открывает сделки.')];
-const nav = $$('.scene-nav a');
+const storyAudio=createStoryAudio();
+const speedBadge=document.createElement('span');speedBadge.className='story-speed';speedBadge.textContent='4×';speedBadge.setAttribute('aria-hidden','true');document.body.append(speedBadge);
 let metrics=[],current=-1,local=0,globalProgress=0,queued=false,replayFrame=0,replayOverride=null;
 const sceneDurations=[7,92,6,8,13,7,92,9,5];
 let sceneTime=0,ambientTime=0,previous=-1,transitionTime=1,lastFrame=performance.now(),lastPaint=0;
 let marketState={price:4133.48,entry:4133.48,sl:4121.08,tp:4158.28,reaction:4148.19,elapsed:0,focus:0};
+let marketScene=-1,marketSceneTime=0;
 const signalText=[];const signalWalker=document.createTreeWalker($('#stage'),NodeFilter.SHOW_TEXT);let textNode;
 while(textNode=signalWalker.nextNode())if(/4133\.48|4121\.08|4158\.28/.test(textNode.nodeValue))signalText.push({node:textNode,template:textNode.nodeValue});
 let boundSignal=null;
@@ -28,6 +32,23 @@ function delayMotion(u){
  scenes[1].style.setProperty('--focus',focus);scenes[1].style.setProperty('--reaction',reaction);scenes[1].style.setProperty('--scrub',u);scenes[1].dataset.phase=t<3.2?'signal':t<3.4?'zoom':t<4?'entry':t<23.4?'market':t<25.2?'reaction':'overview';
  $('.delay-layout').style.opacity=1-focus;$('.delay-layout').style.transform=still?'none':`translate3d(0,${-focus*105}px,${-focus*240}px) scale(${1-focus*.26})`;
  $('.delay-question').style.opacity=(1-focus)*smooth((t-1.6)/.5);
+}
+
+// Keep the full title available to assistive technology while animating its visible characters.
+const finishTitle=$('#finish-title'),finishChars=[];
+finishTitle.setAttribute('aria-label',finishTitle.textContent.replace(/\s+/g,' ').trim());
+const finishWalker=document.createTreeWalker(finishTitle,NodeFilter.SHOW_TEXT),finishNodes=[];
+while(finishWalker.nextNode())finishNodes.push(finishWalker.currentNode);
+for(const node of finishNodes){const fragment=document.createDocumentFragment();for(const char of Array.from(node.nodeValue)){const span=document.createElement('span');span.setAttribute('aria-hidden','true');span.textContent=char;finishChars.push(span);fragment.append(span);}node.replaceWith(fragment);}
+document.body.classList.add('finish-animated');
+function finishMotion(time){
+ const still=reduced.matches,t=still?Infinity:time,move=still?1:smooth((t-.65)/.8);
+ const brand=$('.finish-brand'),route=$('.finish-route'),video=$('.finish-video'),icons=$('.finish-integrations');
+ brand.style.opacity=still?1:smooth(t/.35);brand.style.transform=`translateY(${(1-move)*Math.min(innerHeight*.24,160)}px)`;
+ finishChars.forEach((char,i)=>{char.style.opacity=still||t>=1.55+i*.035?'1':'0';});
+ const end=1.55+finishChars.length*.035;
+ const reveal=(element,start)=>{const value=still?1:smooth((t-start)/.45);element.style.opacity=value;element.style.transform=`translateY(${(1-value)*10}px)`;element.inert=value<.95;};
+ reveal(route,end+.1);reveal(video,end+.65);reveal(icons,end+1.15);
 }
 
 const motionGroups = scenes.map(scene=>[...scene.querySelectorAll('.motion')]);
@@ -62,6 +83,7 @@ function sceneDetails(index,u){
   $('#bot-entry').textContent=(marketState.botEntry??marketState.entry).toFixed(2);const values=marketState.trade?window.LVMarketSim.amounts(marketState.trade,marketState.price):{floating:0};$('#bot-distance').textContent=window.LVMarketSim.formatMoney(values.floating,true);scenes[6].dataset.phase=t<2.5?'signal':t<3.7?'recognition':t<4.8?'entry':t<8?'protected':'report';
  }
 
+ if(index===8)finishMotion(sceneTime);
  if(index===7){const p=still?.5:u;$('.watch-orbit').style.setProperty('--angle',`${p*340}deg`);$('.watch-orbit').style.setProperty('--orbit-tilt',`${still?0:18-Math.sin(p*Math.PI)*14}deg`);if(!still)$('.watch-orbit').style.transform=`perspective(900px) rotateY(${Math.sin(p*4)*8}deg)`;const minutes=23*60+59+Math.floor(p*3);$('#night-time').textContent=String(Math.floor(minutes/60)%24).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');}
 }
 // Decorative motion has its own unbounded clock. It never replays story events.
@@ -89,10 +111,9 @@ function depthMotion(index,u,clock){
 }
 function enterScene(index){
  if(index===current)return;
- previous=current;current=index;sceneTime=0;local=0;transitionTime=previous<0?1:0;document.documentElement.classList.remove('delay-scrubbing');document.documentElement.classList.toggle('demo-scene',index===1||index===6);
+ stopFastForward();marketScene=-1;previous=current;current=index;sceneTime=0;local=0;transitionTime=previous<0?1:0;document.documentElement.classList.remove('delay-scrubbing');document.documentElement.classList.toggle('demo-scene',index===1||index===6);
  cancelAnimationFrame(replayFrame);replayFrame=0;replayOverride=null;$('#replay-route').disabled=false;
  scenes.forEach((scene,i)=>{scene.setAttribute('aria-hidden',String(i!==index));scene.inert=i!==index;});
- nav.forEach((a,i)=>{a.classList.toggle('selected',i===index);if(i===index)a.setAttribute('aria-current','step');else a.removeAttribute('aria-current');});
  document.body.dataset.sceneNumber=String(index+1).padStart(2,'0');document.body.dataset.scene=String(index);document.body.dataset.sceneName=chapterNames[index];document.documentElement.style.setProperty('--scroll',index/8);
 }
 function update(){
@@ -124,20 +145,39 @@ window.addEventListener('keydown',e=>{
 
  navigationUntil=performance.now()+650;goTo('#'+chapters[clamp(index,0,8)].id,undefined,index<current);
 });
+// Hold the right side of either signal scene to play its timeline at 4x.
+let fastPointer=null,fastTimer=0,fastForward=false;
+function stopFastForward(){clearTimeout(fastTimer);fastTimer=0;fastPointer=null;fastForward=false;document.documentElement.classList.remove('story-fast');}
+function signalEndTime(){
+ if(marketScene!==current||!marketState.trade||!Number.isFinite(marketState.rawNow))return null;
+ return marketSceneTime+(marketState.trade.endAt-marketState.rawNow)/window.LVMarketSim.TIMING.rate;
+}
+function mayAccelerate(){const end=signalEndTime();return (current===1||current===6)&&(end===null||sceneTime<end);}
+window.addEventListener('pointerdown',e=>{
+ if(!mayAccelerate()||!e.isPrimary||e.button!==0||e.clientX<innerWidth*.68||e.target.closest('a,button,input,select,textarea'))return;
+ stopFastForward();fastPointer={id:e.pointerId,x:e.clientX,y:e.clientY};
+ fastTimer=setTimeout(()=>{if(fastPointer&&mayAccelerate()){window.getSelection()?.removeAllRanges();fastForward=true;document.documentElement.classList.add('story-fast');}else stopFastForward();},220);
+},{passive:true});
+window.addEventListener('pointermove',e=>{if(fastPointer&&e.pointerId===fastPointer.id&&Math.hypot(e.clientX-fastPointer.x,e.clientY-fastPointer.y)>12)stopFastForward();},{passive:true});
+for(const event of ['pointerup','pointercancel'])window.addEventListener(event,e=>{if(fastPointer&&e.pointerId===fastPointer.id)stopFastForward();},{passive:true});
+window.addEventListener('blur',stopFastForward);
+document.addEventListener('contextmenu',e=>{if(fastPointer)e.preventDefault();});
+document.addEventListener('selectstart',e=>{if(fastPointer)e.preventDefault();});
 let touchStart=null;
 window.addEventListener('touchstart',e=>{if(e.touches.length===1)touchStart={x:e.touches[0].clientX,y:e.touches[0].clientY,index:current};else touchStart=null;},{passive:true});
 window.addEventListener('touchmove',e=>{if(!touchStart||e.touches.length!==1)return;const dx=touchStart.x-e.touches[0].clientX,dy=touchStart.y-e.touches[0].clientY;if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx))e.preventDefault();},{passive:false});
 window.addEventListener('touchcancel',()=>{touchStart=null;},{passive:true});
 window.addEventListener('touchend',e=>{if(!touchStart)return;const dy=touchStart.y-e.changedTouches[0].clientY,dx=touchStart.x-e.changedTouches[0].clientX;if(Math.abs(dy)>45&&Math.abs(dy)>Math.abs(dx))goTo('#'+chapters[clamp(touchStart.index+Math.sign(dy),0,8)].id,undefined,dy<0);touchStart=null;},{passive:true});
-$('#replay-route').addEventListener('click',()=>{sceneTime=0;filmMarket.restart(6);$('#replay-status').textContent=tr('Сигнал проходит маршрут: Telegram, распознавание, MetaTrader 5.');$('#replay-route').disabled=true;});
-document.addEventListener('visibilitychange',()=>{lastFrame=performance.now();});
+$('#replay-route').addEventListener('click',()=>{stopFastForward();marketScene=-1;sceneTime=0;filmMarket.restart(6);$('#replay-status').textContent=tr('Сигнал проходит маршрут: Telegram, распознавание, MetaTrader 5.');$('#replay-route').disabled=true;});
+document.addEventListener('visibilitychange',()=>{lastFrame=performance.now();if(document.hidden)stopFastForward();});
 function animate(now){
  const dt=document.hidden?0:Math.min(Math.max((now-lastFrame)/1000,0),1);lastFrame=now;
- if(current>=0){sceneTime+=dt;ambientTime+=dt;transitionTime+=dt;const active=!document.hidden&&(!reduced.matches||sceneTime<sceneDurations[current]+.8||transitionTime<.7);
+ if(current>=0){const clock=advanceStoryTime(sceneTime,dt,fastForward&&(current===1||current===6),signalEndTime());if(clock.stop)stopFastForward();sceneTime+=clock.advance;ambientTime+=clock.advance;transitionTime+=dt;const active=!document.hidden&&(!reduced.matches||sceneTime<sceneDurations[current]+.8||transitionTime<.7);
  if((active||queued||lastPaint===0)&&now-lastPaint>1000/30){
  lastPaint=now;local=clamp(sceneTime/sceneDurations[current],0,.9999);const transition=reduced.matches?1:smooth(transitionTime/.6);
  scenes.forEach((scene,i)=>{const visible=i===current||(i===previous&&transition<1);scene.classList.toggle('active',visible);if(!visible){scene.style.opacity=0;return;}if(i===current){scene.style.opacity=transition;scene.style.transform=reduced.matches?'none':`translate3d(0,${(1-transition)*40}px,${-(1-transition)*160}px) rotateX(${-(1-transition)*5}deg)`;}else{scene.style.opacity=1-transition;scene.style.transform=`translate3d(0,${-transition*35}px,${-transition*230}px) rotateX(${transition*6}deg)`;}});
- marketState=filmMarket.render(current,local,ambientTime,sceneTime);syncSignal();
+ marketState=filmMarket.render(current,local,ambientTime,sceneTime);marketScene=current;marketSceneTime=sceneTime;syncSignal();
+ storyAudio.update(current,sceneTime);speedBadge.style.top=($('#market').dataset.labelTop||'0')+'px';
  const resultReveal=Math.max(resultCard.update(marketState.trade,marketState.rawNow,current===6),telegramNotice.update(marketState.trade,marketState.rawNow,current===1));document.documentElement.style.setProperty('--trade-result',resultReveal);
  updateTicker(marketState.focus);
  setMotion(current,local);sceneDetails(current,local);

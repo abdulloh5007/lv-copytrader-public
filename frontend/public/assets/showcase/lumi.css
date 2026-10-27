@@ -3,7 +3,7 @@
 .lumi.is-ready{opacity:1}.lumi[hidden]{display:none!important}
 .lumi-pet{position:absolute;inset:0;padding:0!important;border:0!important;border-radius:24px;background:transparent!important;box-shadow:none!important;cursor:grab;touch-action:none;pointer-events:auto;outline-offset:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .lumi-pet:focus-visible{outline:2px solid #8bc7ff;outline-offset:2px}.lumi.is-dragging .lumi-pet{cursor:grabbing}
-.lumi-sprite{position:absolute;inset:0;background-image:url('pets/lv1/sprites.webp');background-repeat:no-repeat;background-size:400% 800%;transform-origin:50% 85%;filter:drop-shadow(0 4px 7px #0005);pointer-events:none;transition:filter .2s}
+.lumi-sprite{position:absolute;inset:0;background-image:url('pets/lv1/sprites-b322f4a58a72.webp');background-repeat:no-repeat;background-size:400% 800%;transform-origin:50% 85%;filter:drop-shadow(0 4px 7px #0005);pointer-events:none;transition:filter .2s}
 .lumi[data-state="walk-left"] .lumi-sprite{transform:scaleX(-1)}
 .lumi.is-dragging .lumi-sprite{filter:drop-shadow(0 12px 10px #0007);transform:rotate(var(--drag-lean,0deg)) scale(1.04)}
 .lumi-bubble{position:absolute;left:calc(var(--bubble-offset,0px) + 8px);bottom:calc(100% + 7px);width:max-content;max-width:min(218px,calc(100vw - 36px));padding:10px 14px;border:1px solid #7cbaec45;border-radius:14px 14px 14px 4px;background:linear-gradient(140deg,#1c2b3df5,#101922f5);box-shadow:0 8px 24px #0004;color:#e8f4ff;font:500 13px/1.5 Inter,Arial,sans-serif;letter-spacing:0;text-align:left;opacity:0;transform:translateY(6px) scale(.96);transform-origin:25% 100%;transition:opacity .25s,transform .3s;pointer-events:none}
@@ -11,9 +11,9 @@
 .lumi-bubble[data-tone="profit"]{border-color:#5adca16b;color:#82edbc;background:linear-gradient(140deg,#14302af5,#101e23f5)}
 .lumi-bubble[data-tone="loss"]{border-color:#eb8a8a65;color:#f5a0a0;background:linear-gradient(140deg,#302029f5,#1d1621f5)}
 .lumi-bills{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.lumi-bill{position:absolute;left:72%;top:34%;width:19px;height:12px;background:url('pets/lumi/banknote.svg') center/contain no-repeat;opacity:0;animation:lv1-money 2s var(--delay) cubic-bezier(.2,.65,.4,1) both}
+.lumi-bill{position:absolute;left:72%;top:34%;width:19px;height:12px;background:url('pets/lumi/banknote-858b9eb56732.svg') center/contain no-repeat;opacity:0;animation:lv1-money 2s var(--delay) cubic-bezier(.2,.65,.4,1) both}
 @keyframes lv1-money{0%{opacity:0;transform:translate(0,0) rotate(-20deg)}8%{opacity:1}44%{opacity:1;transform:translate(calc(var(--fly-x)*.55),var(--fly-y)) rotate(calc(var(--fly-r)*.45))}75%{opacity:1}100%{opacity:0;transform:translate(var(--fly-x),45px) rotate(var(--fly-r))}}
-@media(max-width:600px){.lumi{--pet-size:100px}.lumi-bubble{font-size:12px;max-width:200px;padding:9px 12px}}
+@media(max-width:600px){.lumi{--pet-size:108px}.lumi-bubble{font-size:12px;max-width:200px;padding:9px 12px}}
 @media(prefers-reduced-motion:reduce){.lumi,.lumi-bubble{transition:none}.lumi-bill{animation:none}.lumi.is-dragging .lumi-sprite{transform:none}}
 .lumi[data-near-top="true"] .lumi-bubble{bottom:auto;top:calc(100% + 8px);transform-origin:25% 0}
 
@@ -34,3 +34,26 @@
 .lumi[data-state="walk-right"] .lumi-walk-rig,.lumi[data-state="walk-left"] .lumi-walk-rig{opacity:1}
 .lumi.is-dragging .lumi-action-rig{transform:rotate(var(--drag-lean,0deg)) scale(1.04);filter:drop-shadow(0 12px 10px #0007)}
 @media(prefers-reduced-motion:reduce){.lumi .lumi-action-rig,.lumi .lumi-walk-rig{transition:none}.lumi.is-dragging .lumi-action-rig{transform:none}}
+
+/* If the articulated pose cannot load, keep the atlas sprite visible and interactive. */
+.lumi[data-fallback="sprite"] .lumi-sprite{display:block;visibility:visible}
+.lumi[data-fallback="sprite"] .lumi-action-rig,.lumi[data-fallback="sprite"] .lumi-walk-rig{display:none}
+
+/* Sleep marks float from the robot rather than appearing as a speech bubble. */
+.lumi-sleep{position:absolute;left:61%;top:10%;width:42px;height:25px;pointer-events:none;opacity:0;transition:opacity .3s}
+.lumi[data-state="sleeping"] .lumi-sleep{opacity:1}
+.lumi-sleep span{position:absolute;left:0;bottom:0;font:700 16px/1 system-ui,sans-serif;color:#77baff;text-shadow:0 1px 4px #092e53;opacity:0}
+.lumi[data-state="sleeping"] .lumi-sleep span{animation:lv1-sleep-float 3.6s ease-in-out infinite;animation-delay:var(--sleep-delay,0s)}
+.lumi-sleep span:nth-child(2){--sleep-delay:-1.2s;font-size:13px}.lumi-sleep span:nth-child(3){--sleep-delay:-2.4s;font-size:11px}
+@keyframes lv1-sleep-float{0%{opacity:0;transform:translate(0,0) rotate(-10deg) scale(.75)}18%{opacity:.9}55%{opacity:.85;transform:translate(9px,-25px) rotate(10deg) scale(1)}100%{opacity:0;transform:translate(-3px,-57px) rotate(-8deg) scale(1.1)}}
+@media(prefers-reduced-motion:reduce){.lumi-sleep{transition:none}.lumi[data-state="sleeping"] .lumi-sleep span{animation:none;opacity:0}.lumi[data-state="sleeping"] .lumi-sleep span:first-child{opacity:.9}}
+
+/* A small orbit of stars marks the dizzy seated pose. */
+.lumi-dizzy-stars{position:absolute;left:25%;top:5%;width:50%;height:20%;pointer-events:none;opacity:0;transition:opacity .25s}
+.lumi[data-state="shaken"] .lumi-dizzy-stars,.lumi[data-state="dizzy"] .lumi-dizzy-stars{opacity:1}
+.lumi[data-state="shaken"] .lumi-dizzy-stars{top:-5%}.lumi[data-state="dizzy"] .lumi-dizzy-stars{top:3%}
+.lumi-dizzy-stars span{position:absolute;left:50%;top:50%;color:#ffe48c;font:700 13px/1 system-ui,sans-serif;text-shadow:0 1px 6px #fdb53a99;opacity:0}
+.lumi[data-state="shaken"] .lumi-dizzy-stars span,.lumi[data-state="dizzy"] .lumi-dizzy-stars span{opacity:1;animation:lv1-dizzy-orbit 1.8s linear infinite;animation-delay:var(--star-delay,0s)}
+.lumi-dizzy-stars span:nth-child(2){--star-delay:-.6s;font-size:10px}.lumi-dizzy-stars span:nth-child(3){--star-delay:-1.2s;font-size:9px}
+@keyframes lv1-dizzy-orbit{0%{transform:translate(26px,0) scale(.85)}25%{transform:translate(0,-6px) scale(1)}50%{transform:translate(-26px,0) scale(.85)}75%{transform:translate(0,6px) scale(.7)}100%{transform:translate(26px,0) scale(.85)}}
+@media(prefers-reduced-motion:reduce){.lumi-dizzy-stars{transition:none}.lumi[data-state="shaken"] .lumi-dizzy-stars span,.lumi[data-state="dizzy"] .lumi-dizzy-stars span{animation:none;transform:translateX(18px)}.lumi-dizzy-stars span:nth-child(2){translate:-30px 0}.lumi-dizzy-stars span:nth-child(3){translate:-15px -10px}}

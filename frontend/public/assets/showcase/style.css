@@ -124,3 +124,33 @@ html{scroll-snap-type:y mandatory}.chapter,.chapter:last-child{height:100svh;scr
 .network-port .port-logo{opacity:calc(.28 + var(--ready,0)*.72);filter:grayscale(calc(1 - var(--ready,0))) brightness(calc(.55 + var(--ready,0)*.45)) drop-shadow(0 0 calc(var(--flash,0)*11px) rgba(130,203,255,calc(var(--flash,0)*.8)))}
 .network-port>b,.network-port>small{opacity:calc(.5 + var(--ready,0)*.5)}
 .watch-satellite>img{object-fit:contain;background:none;border-radius:0;box-shadow:none}
+
+/* Subtle edge feedback during a hold; it never intercepts the page controls. */
+html.story-fast::after{content:'';position:fixed;z-index:90;top:0;right:0;bottom:0;width:32%;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(0,0,0,.27));}
+.finish-content{display:flex;flex-direction:column;align-items:center;justify-content:center;max-width:900px;text-align:center}
+.finish-brand{width:min(360px,72vw);margin:0 auto 26px;will-change:transform,opacity}
+.finish-brand>img{display:block;width:100%;height:auto}
+.finish-content h2{margin:0 0 27px;font-size:clamp(28px,5.5vw,52px);line-height:1.22;letter-spacing:-.04em}
+.finish-route{display:inline-block;color:#dce8f5;text-decoration:none;border-bottom:1px dashed #a8c4df;padding:0 0 5px;font-size:14px;font-weight:600}
+.finish-route:hover{color:#fff;border-bottom-color:#fff}
+.finish-route:focus-visible,.finish-video:focus-visible{outline:2px solid #8bc7ff;outline-offset:5px}
+.finish-video{margin-top:24px;min-width:200px;justify-content:center}
+.finish-integrations{margin:33px 0 0;gap:20px}
+.finish-integrations>img{width:30px;height:30px;object-fit:contain;mix-blend-mode:normal}
+.finish-integrations>span{background:#8fcaff30}
+.finish-animated .finish-brand,.finish-animated .finish-route,.finish-animated .finish-video,.finish-animated .finish-integrations{opacity:0}
+.finish-animated #finish-title>span{opacity:0}
+@media(max-width:760px){.finish-brand{width:min(310px,72vw);margin-bottom:24px}.finish-content h2{font-size:clamp(24px,6.6vw,36px);margin-bottom:24px}.finish-route{font-size:13px}.finish-video{margin-top:22px}.finish-integrations{margin-top:30px;gap:15px}}
+@media(max-height:600px){.finish-brand{width:min(260px,65vw);margin-bottom:15px}.finish-content h2{margin-bottom:14px}.finish-video{margin-top:14px}.finish-integrations{margin-top:18px}}
+
+/* Sound controls and temporary speed marker stay clear of the chart and navigation. */
+.story-audio-toggle{position:fixed;z-index:100;top:calc(52px + env(safe-area-inset-top,0px));right:18px;width:38px;height:38px;display:grid;place-items:center;padding:0;border:1px solid #a6c9ea30;border-radius:50%;background:#0b111bd9;color:#c4d8ea;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.story-audio-toggle:hover{color:#fff;background:#182535}.story-audio-toggle:focus-visible{outline:2px solid #8bc7ff;outline-offset:3px}.story-audio-toggle svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.story-audio-toggle svg path:first-child{fill:currentColor;stroke:none}.story-audio-toggle .sound-waves{display:none}.story-audio-toggle.is-on .sound-waves{display:block}.story-audio-toggle.is-on .sound-off{display:none}
+.story-speed{position:fixed;z-index:95;right:8%;transform:translateY(-75%);color:#d7e9fa;font:600 11px/1 var(--mono);letter-spacing:.03em;pointer-events:none;opacity:0;transition:opacity .16s}.story-fast .story-speed{opacity:1}
+
+/* Long presses and double taps in signal scenes must not select text or open image menus. */
+html.demo-scene .scene[data-index="1"],html.demo-scene .scene[data-index="1"] *,
+html.demo-scene .scene[data-index="6"],html.demo-scene .scene[data-index="6"] *{
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+}
+html.demo-scene .scene[data-index="1"] img,html.demo-scene .scene[data-index="6"] img{-webkit-user-drag:none}

@@ -19,11 +19,14 @@
   margin-inline: auto;
 }
 .demo-intro {
+  text-align: center;
+  margin: 14px 0 32px;
+}
+.demo-intro__meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin: 14px 0 32px;
 }
 .demo-intro h1 {
   font-size: clamp(28px, 4vw, 40px);
@@ -63,15 +66,17 @@
   align-items: center;
   padding: 24px 30px;
   margin-bottom: 26px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 22px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 .demo-flow__step {
   display: flex;
+  flex-direction: column;
   justify-content: center;
-  gap: 14px;
+  gap: 10px;
   align-items: center;
+  text-align: center;
   min-width: 0;
 }
 .demo-flow__step > div:last-child {
@@ -496,7 +501,7 @@
   }
   .demo-flow__connector {
     align-self: start;
-    margin-top: 21px;
+    margin-top: 16px;
   }
   .demo-flow__connector::before {
     display: none;
@@ -533,7 +538,6 @@
     padding: 12px 14px 36px;
   }
   .demo-intro {
-    align-items: flex-start;
     margin-bottom: 24px;
   }
   .demo-intro h1 {

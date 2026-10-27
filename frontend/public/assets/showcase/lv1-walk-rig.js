@@ -1,5 +1,5 @@
 /* A two-bone walk rig using the existing generated robot artwork. */
-const poseURL=new URL('pets/lv1/walk-rig-pose.png',import.meta.url).href;
+const poseURL=new URL('pets/lv1/walk-rig-pose-e636832997a2.png',import.meta.url).href;
 const NS='http://www.w3.org/2000/svg';
 const points={near:{hip:[84,149],knee:[80,171],ankle:[76,185],ground:185},far:{hip:[117,149],knee:[118,171],ankle:[117,185],ground:184}};
 const clips={
@@ -21,7 +21,7 @@ export function createWalkRig(){
  const prefix='lv-gait-'+(++serial),svg=document.createElementNS(NS,'svg');svg.classList.add('lumi-walk-rig');svg.setAttribute('viewBox','0 0 192 208');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');
  svg.innerHTML=`<defs>${Object.entries(clips).map(([name,path])=>`<clipPath id="${prefix}-${name}"><path d="${path}"/></clipPath>`).join('')}</defs>`;
  const layers={};for(const name of ['farArm','farThigh','farShin','farFoot','nearThigh','nearShin','nearFoot','body','nearArm']){
-  const g=document.createElementNS(NS,'g'),cut=document.createElementNS(NS,'g'),img=document.createElementNS(NS,'image');cut.setAttribute('clip-path',`url(#${prefix}-${name})`);img.setAttribute('href',poseURL);img.setAttribute('width','192');img.setAttribute('height','208');cut.append(img);g.append(cut);g.dataset.limb=name;svg.append(g);layers[name]=g;
+  const g=document.createElementNS(NS,'g'),cut=document.createElementNS(NS,'g'),img=document.createElementNS(NS,'image');cut.setAttribute('clip-path',`url(#${prefix}-${name})`);img.setAttribute('href',poseURL);img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',poseURL);img.setAttribute('width','192');img.setAttribute('height','208');cut.append(img);g.append(cut);g.dataset.limb=name;svg.append(g);layers[name]=g;
  }
  function render(cycle){
   const phase=((cycle%1)+1)%1,bob=4+1.5*Math.sin(phase*Math.PI*2)**2;

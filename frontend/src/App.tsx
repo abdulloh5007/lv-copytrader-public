@@ -2,6 +2,7 @@ import type { ErrorInfo, ReactElement, ReactNode } from 'react';
 import { Component, lazy, Suspense, useCallback, useMemo } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppBottomNav, AppHeader } from './components/AppHeader';
+import { PublicPet } from './components/PublicPet';
 import type { TKey, Translate } from './i18n';
 import { useT } from './i18n';
 
@@ -200,22 +201,28 @@ function ProtectedApp(): ReactElement | null {
 }
 
 export function App(): ReactElement {
+  const { pathname } = useLocation();
+  const publicPath = pathname.replace(/\/+$/, '');
+  const showPet = publicPath === '/waitlist' || publicPath === '/demo';
   return (
-    <Suspense
-      fallback={
-        <div className="page-loading" role="status">
-          <span className="loading-dot" />
-          <span>LV Copytrader</span>
-        </div>
-      }
-    >
-      <Routes>
-        <Route path="/waitlist" element={<Waitlist />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/demo" element={<Demo />} />
-        <Route path="*" element={<ProtectedApp />} />
-      </Routes>
-    </Suspense>
+    <>
+      {showPet && <PublicPet />}
+      <Suspense
+        fallback={
+          <div className="page-loading" role="status">
+            <span className="loading-dot" />
+            <span>LV Copytrader</span>
+          </div>
+        }
+      >
+        <Routes>
+          <Route path="/waitlist" element={<Waitlist />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/demo" element={<Demo />} />
+          <Route path="*" element={<ProtectedApp />} />
+        </Routes>
+      </Suspense>
+    </>
   );
 }
 export default App;

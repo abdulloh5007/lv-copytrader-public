@@ -4,6 +4,7 @@ import { useT } from '@/i18n';
 import { BrandMark } from './Icon';
 import { Preferences } from './Preferences';
 
+
 export function PublicLayout({
   children,
   login = false,
@@ -27,7 +28,7 @@ export function PublicLayout({
         </Link>
         <div className="public-header__actions">
           <Preferences />
-          {(login || demo) && <Link
+          {login && <Link
             className="btn btn--sm"
             to="/waitlist"
           >

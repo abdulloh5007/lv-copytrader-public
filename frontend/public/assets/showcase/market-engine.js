@@ -49,6 +49,7 @@ export function createFilmMarket(host,{reducedMotion=()=>false}={}){
  function drawOverlay(now,phase){
   if(!trade)return;
   const age=phase.t-(phase.bot?3.7:3.4),reveal=smooth(age/.38),reaction=smooth((phase.rawNow-trade.reactionAt)/(.7*RATE));
+  host.dataset.labelTop=((layout().top-30)*scale).toFixed(2);
   const result=window.LVMarketSim.drawTradeOverlay(cx,{width:W,height:H,trade,layout:layout(),worldX,worldY,price:market(now),opacity:phase.focus*reveal,age,protectedLevel:phase.bot?smooth((age-1.1)/.65):1,reaction,bot:phase.bot,pulse:entryAccent});
   if(result)for(const [key,value] of Object.entries(result))host.dataset[key]=(value*scale).toFixed(2);
   host.dataset.botOpened=reveal.toFixed(3);host.dataset.botProtected=smooth((age-1.1)/.65).toFixed(3);

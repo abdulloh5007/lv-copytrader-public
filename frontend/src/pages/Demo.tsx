@@ -56,24 +56,24 @@ export default function Demo() {
     <PublicLayout demo>
       <div className="demo-page">
         <header className="demo-intro">
-          <div>
+          <div className="demo-intro__meta">
             <div className="demo-eyebrow">
               <span className="demo-live-dot" data-live={fresh} />
               {statusLabel}
             </div>
-            <h1>{t('demo.title')}</h1>
+            {viewers !== null && (
+              <div
+                className="demo-viewers"
+                aria-label={`${integer(viewers)} ${viewersLabel}`}
+                title={t('demo.viewers_hint')}
+              >
+                <Icon name="eye" size={16} />
+                <span className="tnum">{integer(viewers)}</span>
+                <span>{viewersLabel}</span>
+              </div>
+            )}
           </div>
-          {viewers !== null && (
-            <div
-              className="demo-viewers"
-              aria-label={`${integer(viewers)} ${viewersLabel}`}
-              title={t('demo.viewers_hint')}
-            >
-              <Icon name="eye" size={16} />
-              <span className="tnum">{integer(viewers)}</span>
-              <span>{viewersLabel}</span>
-            </div>
-          )}
+          <h1>{t('demo.title')}</h1>
         </header>
         <section className="demo-flow" aria-label={t('demo.flow_label')}>
           <div className="demo-flow__step">
@@ -82,7 +82,6 @@ export default function Demo() {
             </div>
             <div>
               <strong>Telegram</strong>
-              <span>{t('demo.signal')}</span>
             </div>
           </div>
           <span className="demo-flow__connector" aria-hidden="true">
@@ -94,7 +93,6 @@ export default function Demo() {
             </div>
             <div>
               <strong>LV Copytrader</strong>
-              <span>{t('demo.decision')}</span>
             </div>
           </div>
           <span className="demo-flow__connector" aria-hidden="true">
@@ -106,7 +104,6 @@ export default function Demo() {
             </div>
             <div>
               <strong>MetaTrader 5</strong>
-              <span>{t('demo.execution')}</span>
             </div>
           </div>
         </section>
