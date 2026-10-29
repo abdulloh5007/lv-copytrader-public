@@ -1,0 +1,5 @@
+OS logos from https://github.com/devicons/devicon/tree/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons
+Windows: windows11/windows11-original.svg
+Apple: apple/apple-original.svg
+Linux: linux/linux-original.svg
+Logos identify their respective platforms. All brand rights remain with their owners.

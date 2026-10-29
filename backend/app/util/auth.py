@@ -42,6 +42,9 @@ import secrets
 import time
 from typing import Any, Awaitable, Callable, Final
 
+from app.util.admin_credentials import is_password_hash
+from app.util.password_verify import VerificationBusy, verify
+
 __all__ = [
     "ASSET_PREFIX",
     "AuthMiddleware",
@@ -178,7 +181,8 @@ def credentials_match(
     fail the login rather than raise a 500.
     """
     user_ok = hmac.compare_digest(given_user.encode("utf-8"), username.encode("utf-8"))
-    password_ok = hmac.compare_digest(given_password.encode("utf-8"), password.encode("utf-8"))
+    from app.util.admin_credentials import password_matches
+    password_ok = password_matches(given_password, password)
     return user_ok and password_ok
 
 
@@ -395,6 +399,7 @@ class AuthMiddleware:
         limiter: LoginRateLimiter | None = None,
         sessions: Any = None,
         allow_unconfigured: bool = False,
+        credentials: Callable[[], tuple[str, str]] | None = None,
     ) -> None:
         self.app = app
         self.username = username
@@ -404,6 +409,7 @@ class AuthMiddleware:
         self.limiter = limiter or LoginRateLimiter()
         self.sessions = sessions
         self.allow_unconfigured = allow_unconfigured
+        self.credentials = credentials or (lambda: (self.username, self.password))
 
     @property
     def secret(self) -> str:
@@ -413,7 +419,8 @@ class AuthMiddleware:
     @property
     def enabled(self) -> bool:
         """Missing credentials lock private routes unless dev mode was explicitly enabled."""
-        return bool(self.username and self.password) or not self.allow_unconfigured
+        username, password = self.credentials()
+        return bool(username and password) or not self.allow_unconfigured
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if not self.enabled or scope.get("type") not in ("http", "websocket"):
@@ -431,14 +438,28 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if not self.username or not self.password:
+        username, password = self.credentials()
+        if not username or not password:
             await self._reject(scope, receive, send)
             return
         cookie = _cookie(scope, COOKIE_NAME)
         by_cookie = self.sessions.valid(cookie) if self.sessions else valid_cookie(self.secret, cookie)
         authorization = _header(scope, b"authorization")
         peer = str((scope.get("client") or ("unknown", 0))[0])
-        by_basic = basic_credentials_ok(authorization, self.username, self.password)
+        by_basic = False
+        if authorization and not by_cookie:
+            # Throttle before a KDF. Bootstrap plaintext credentials keep the existing
+            # correct-Basic global-limit exemption; hashed passwords use the bounded gate.
+            wait = self.limiter.retry_after(peer, include_global=is_password_hash(password))
+            if wait:
+                await self._throttled(scope, receive, send, wait)
+                return
+            try:
+                by_basic = await verify(basic_credentials_ok, authorization, username, password)
+                by_basic = by_basic and self.credentials() == (username, password)
+            except VerificationBusy:
+                await self._throttled(scope, receive, send, 1)
+                return
         if authorization and not by_cookie and self.limiter.retry_after(peer, include_global=not by_basic):
             if scope["type"] == "websocket":
                 await self._reject(scope, receive, send)
@@ -458,12 +479,13 @@ class AuthMiddleware:
             await self._reject(scope, receive, send)
             return
 
-        if scope["type"] == "websocket" and by_cookie:
+        if scope["type"] == "websocket":
             from starlette.websockets import WebSocketDisconnect
             closed = False
             async def guarded_send(message):
                 nonlocal closed
-                valid = self.sessions.valid(cookie) if self.sessions else valid_cookie(self.secret, cookie)
+                valid = ((self.sessions.valid(cookie) if self.sessions else valid_cookie(self.secret, cookie))
+                         if by_cookie else self.credentials() == (username, password))
                 if message.get("type") in {"websocket.accept", "websocket.send"} and (closed or not valid):
                     if not closed:
                         closed = True
@@ -481,7 +503,8 @@ class AuthMiddleware:
 
         # Authenticated by Basic over HTTP: hand back a cookie so the WebSocket can connect.
         header = session_cookie_header(
-            self.secret, secure=scope.get("scheme") in ("https", "wss")
+            self.sessions.secret_for((username, password)) if self.sessions else self.secret,
+            secure=scope.get("scheme") in ("https", "wss")
         ).encode("latin-1")
 
         async def send_with_cookie(message: dict[str, Any]) -> None:
@@ -526,3 +549,14 @@ class AuthMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+    async def _throttled(self, scope: dict[str, Any], receive: Any, send: Any, wait: int) -> None:
+        if scope["type"] == "websocket":
+            await self._reject(scope, receive, send)
+            return
+        from starlette.responses import JSONResponse
+        response = JSONResponse(
+            {"error": {"code": "too_many_attempts", "message": "Try again later", "detail": {"retry_after": wait}}},
+            status_code=429, headers={"Retry-After": str(wait)},
+        )
+        await response(scope, receive, send)

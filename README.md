@@ -43,6 +43,43 @@ The channel reader uses your Telegram **user session**. The optional notificatio
 separate **Bot API token**. An AI provider account and an MT5 broker account are also needed;
 the public repository includes no credentials, sessions, or owner data.
 
+## Guided installation and the `lvct` console
+
+The CLI runs on Linux, Windows and macOS. It provides an interactive terminal menu,
+private setup, dependency checks, health/error diagnostics, stopped-runtime updates, support reports, an SSH-connected runtime and live
+admin password reset. Its host dependency is Python 3.10+; the application is built in Docker.
+
+From a checkout containing the new CLI:
+
+```sh
+sh install.sh --source "$PWD"
+lvct --help
+lvct deps
+lvct init
+lvct doctor
+lvct start
+lvct open
+```
+
+Windows uses `install.ps1`. Once these installers are published in the public `main` branch,
+Linux/macOS users can install with:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/abdulloh5007/lv-copytrader-public/main/install.sh | sh
+```
+
+Local MT5 uses a Linux amd64 Docker engine: Docker Engine on Linux, or Docker Desktop
+with Linux containers on Windows x86-64 and Intel Mac. For Apple Silicon/ARM clients,
+`lvct init --remote user@linux-x64-host` manages an existing Linux x64 computer or VPS
+that the user supplies, over their own SSH connection. Hosting is arranged separately.
+Automatic local Apple Silicon execution is not implemented or validated yet. The existing
+Linux ARM64/FEX runtime remains a separate setup path. Docker Desktop broker execution
+has not yet been certified end to end on every OS.
+
+See the [installation, command and compatibility guide](docs/CLI.md). New CLI installs use
+separate configuration and uniquely named volumes. They do not adopt an existing owner's
+runtime or arm trading automatically.
+
 ## Quick start — Linux x86-64
 
 You need Git, Docker Engine with Compose v2, a Telegram account/API credentials,
@@ -149,3 +186,7 @@ real trading. You are responsible for your broker account and access to the sign
 
 Licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for trading risk and third-party terms.
 LV Copytrader is not affiliated with Telegram, MetaQuotes, or any broker.
+
+See the [documentation index](docs/README.md) and [automation instructions](docs/CLI-AGENTS.md). New CLI panels use the first free loopback port from **19471**; existing installations retain their port.
+
+Official installation and guides: [docs.lvenc.site](https://docs.lvenc.site/) — Windows, macOS and Linux commands, English/Russian/Uzbek documentation. The site labels preview builds separately from GitHub releases.

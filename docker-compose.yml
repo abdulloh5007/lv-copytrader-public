@@ -18,17 +18,17 @@ services:
   # One container, one port, one process (see the Dockerfile CMD: --workers 1, no --reload).
   # =====================================================================================
   app:
-    image: lvct-app:latest
+    image: ${LVCT_APP_IMAGE:-lvct-app:latest}
     build:
       # The context is the repository root because the image builds the frontend too.
       context: .
       dockerfile: backend/Dockerfile
-    env_file: .env
+    env_file: ${LVCT_ENV_FILE:-.env}
     networks: [default, trading]
     environment:
       FORWARDED_ALLOW_IPS: "${SP_TRUSTED_PROXY_IPS:-127.0.0.1}"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${LVCT_PORT:-8000}:8000"
     volumes:
       # SQLite database, downloaded signal images, Telethon session material.
       - lvCT-data:/data
@@ -64,7 +64,7 @@ services:
     build:
       context: ./mt5-sidecar
       dockerfile: Dockerfile
-    image: signalpilot/mt5-sidecar:local
+    image: ${LVCT_SIDECAR_IMAGE:-signalpilot/mt5-sidecar:local}
     networks: [trading]
     # The terminal must never receive backend, Telegram or website credentials.
     environment:
@@ -130,7 +130,7 @@ services:
   # =====================================================================================
   vnc:
     profiles: ["debug"]
-    image: signalpilot/mt5-sidecar:local
+    image: ${LVCT_SIDECAR_IMAGE:-signalpilot/mt5-sidecar:local}
     build:
       context: ./mt5-sidecar
       dockerfile: Dockerfile
@@ -179,17 +179,17 @@ volumes:
   # The database, signal images and Telethon session — losing this loses trade history.
   lvCT-data:
     external: true
-    name: lvct_lvCT-data
+    name: ${LVCT_DATA_VOLUME:-lvct_lvCT-data}
   # The Wine prefix and the MT5 installation, including the broker server list.
   lvCT-mt5-config:
     external: true
-    name: lvct_lvCT-mt5-config
+    name: ${LVCT_MT5_VOLUME:-lvct_lvCT-mt5-config}
   # The Xvfb socket directory, shared between mt5-sidecar and the debug vnc service.
   # Runtime state, never data: everything in here is safe to delete while the stack is down,
   # and a leftover X99 socket in it is exactly what start_xvfb() has to detect and remove.
   lvCT-x11:
     external: true
-    name: lvct_lvCT-x11
+    name: ${LVCT_X11_VOLUME:-lvct_lvCT-x11}
 
 # Keep RPC off the public-app/tunnel bridge while retaining broker Internet access.
 networks:

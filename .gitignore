@@ -70,3 +70,6 @@ artifacts/
 secrets/
 deploy-runtime/
 migration-static/
+
+# Generated standalone documentation and download artifacts
+documentation/dist/

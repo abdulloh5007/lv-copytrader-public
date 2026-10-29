@@ -56,9 +56,13 @@ class SessionGuard:
 
     @property
     def secret(self) -> str:
+        return self.secret_for(self.credentials())
+
+    def secret_for(self, credentials: tuple[str, str]) -> str:
+        """Bind a new cookie to the credentials actually verified, even during rotation."""
         from app.util.auth import resolve_secret
         # A password change, signing-key change, or missing state invalidates old sessions.
-        body = json.dumps(["lvct-session-v2", self.epoch, *self.credentials()]).encode()
+        body = json.dumps(["lvct-session-v2", self.epoch, *credentials]).encode()
         return hmac.new(resolve_secret(self._secret()).encode(), body, hashlib.sha256).hexdigest()
 
     def valid(self, token: str | None) -> bool:

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lv-copytrader-cli"
+dynamic = ["version"]
+description = "LV Copytrader setup and operations console"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+lvct = "lvct.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "lvct.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["lvct*"]

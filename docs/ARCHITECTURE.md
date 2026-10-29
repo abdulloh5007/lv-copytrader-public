@@ -1,9 +1,9 @@
 # LV Copytrader
 
-Current UI, waitlist, security, verification and deployment: [Product guide](docs/PRODUCT.md).
+Current UI, waitlist, security, verification and deployment: [Documentation index](README.md).
 
 
-> **Bringing this up for the first time? Read [RUNBOOK.md](RUNBOOK.md) first.**
+> **Bringing this up for the first time? Read [RUNBOOK.md](../RUNBOOK.md) first.**
 > Most failures here name the wrong thing — `IPC send failed` is not an IPC problem,
 > a `403` is not a bad API key, and `terminal64.exe is running` can be a lie. The
 > runbook is the startup sequence plus a symptom table for every trap that was hit

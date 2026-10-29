@@ -331,3 +331,27 @@ volume backup. Preserve the Wine/FEX version and compatibility mounts. Verify MT
 Telegram readiness before restoring the previous armed state. Never submit test orders.
 Audit the Wine image separately from the backend; vendor-unfixed packages require tracking.
 See [the dated audit](docs/SECURITY-AUDIT.md) for scope and remaining limitations.
+
+
+## Managed CLI and waitlist operations
+
+New users should start with [the CLI guide](docs/CLI.md); agents should read
+[CLI command contracts](docs/CLI-AGENTS.md). Manual Compose examples above retain
+the legacy port; the CLI chooses a free port starting at 19471.
+
+Waitlist maintenance requires local Docker owner access. Run these from the manually
+configured Compose checkout (for a managed installation, use its explicit Docker
+context, project, environment and source paths from `lvct config`):
+
+```sh
+docker compose exec -T app python -m app.cli.waitlist count
+# Export contains personal data; keep it private and remove unneeded copies.
+umask 077
+docker compose exec -T app python -m app.cli.waitlist export > /private/path/waitlist.csv
+docker compose exec -T app python -m app.cli.waitlist delete --email person@example.com
+```
+
+Keep the original encryption key with the database. Regenerating it makes stored
+waitlist addresses and broker/provider/Telegram secrets unreadable. CSV export
+escapes spreadsheet formulas. This is data administration, not a mail subscription
+sender. Public support reports are a separate service: see [Support](docs/SUPPORT.md).

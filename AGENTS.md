@@ -8,7 +8,7 @@ This is the public source edition. Read README.md and CHANGELOG.md before workin
   never import its Git history, branches, tags, or snapshots here.
 - Record every behavior change/fix/improvement in CHANGELOG.md under Unreleased.
 - Keep VERSION, backend/app/__init__.py, backend/pyproject.toml, frontend/package.json and
-  frontend/package-lock.json consistent when preparing a new release.
+  frontend/package-lock.json and cli/lvct/__init__.py consistent when preparing a new release.
 - Run the appropriate tests before committing; never use real broker orders as a test.
 - Review changed CI workflows and run relevant typecheck/build and tests before pushing.
   After pushing, inspect Actions/check statuses for the exact new commit. Report failed, pending,
@@ -16,3 +16,9 @@ This is the public source edition. Read README.md and CHANGELOG.md before workin
   deployment succeeded. Fix failures without disabling checks or rewriting published releases.
 - Public contributors push branches/PRs in this public repository only. Owner publication starts
   from the private source repository using its AGENTS.md and scripts/publish.py, private first.
+
+## Operating a managed CLI installation
+
+Read [docs/CLI-AGENTS.md](docs/CLI-AGENTS.md) before running LVCT commands. It specifies
+read-only diagnostics, long-running commands, stopped-runtime updates/rollback and explicit
+support-report uploads. Existing owner deployments must not be adopted or restarted by the CLI.

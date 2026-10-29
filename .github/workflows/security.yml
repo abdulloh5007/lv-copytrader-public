@@ -29,5 +29,8 @@ jobs:
       - run: npm run --prefix frontend typecheck && npm test --prefix frontend && npm run --prefix frontend build
       - run: python -m pip install -c backend/requirements.lock ./backend pytest pytest-asyncio pip-audit
       - run: pip-audit -r backend/requirements.lock --disable-pip --no-deps
-      - run: python -m pytest -q tests/test_auth.py tests/test_security_hardening.py tests/test_waitlist_security.py tests/test_public_demo.py
+      - run: pip-audit -r support_service/requirements.lock --disable-pip --no-deps
+      - name: Support inbox tests (temporary storage, mocked notifications)
+        run: PYTHONPATH=cli:. python -m unittest discover -s support_service/tests -v
+      - run: python -m pytest -q tests/test_auth.py tests/test_admin_password.py tests/test_password_verify.py tests/test_security_hardening.py tests/test_waitlist_security.py tests/test_public_demo.py
         working-directory: backend

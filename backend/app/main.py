@@ -937,10 +937,15 @@ def create_app() -> FastAPI:
     # /api/auth/login) instead of a 401 the browser would paint as a blank error page.
     app.state.public_demo = PublicDemo(lambda: getattr(app.state, "runtime", None))
     from app.util.auth_state import SessionGuard
+    from app.util.admin_credentials import AdminCredentials
+    app.state.admin_credentials = AdminCredentials(
+        Path(settings.DATA_DIR) / "admin-credentials.json",
+        lambda: (settings.SP_AUTH_USER, settings.SP_AUTH_PASSWORD),
+    )
     app.state.auth_sessions = SessionGuard(
         Path(settings.DATA_DIR) / "auth-sessions.json",
         lambda: settings.SECRET_KEY or "",
-        lambda: (settings.SP_AUTH_USER, settings.SP_AUTH_PASSWORD),
+        app.state.admin_credentials.current,
     )
     app.state.login_rate_limiter = LoginRateLimiter(
         storage_path=Path(settings.DATA_DIR) / "auth-rate.json",
@@ -952,6 +957,7 @@ def create_app() -> FastAPI:
         password=settings.SP_AUTH_PASSWORD,
         secret=lambda: app.state.auth_sessions.secret,
         sessions=app.state.auth_sessions,
+        credentials=app.state.admin_credentials.current,
         allow_unconfigured=settings.SP_ALLOW_UNAUTHENTICATED,
         shell=spa_shell,
         limiter=app.state.login_rate_limiter,

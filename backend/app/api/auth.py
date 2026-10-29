@@ -42,6 +42,8 @@ from app.util.auth import (
     valid_cookie,
 )
 from app.util.logging import get_logger
+from app.util.admin_credentials import is_password_hash
+from app.util.password_verify import VerificationBusy, verify
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -80,9 +82,10 @@ def _secure(request: Request) -> bool:
     return request.url.scheme in ("https", "wss")
 
 
-def _configured() -> tuple[str, str]:
+def _configured(request: Request) -> tuple[str, str]:
     """Return the configured (username, password) pair, empty when login is switched off."""
-    return settings.SP_AUTH_USER or "", settings.SP_AUTH_PASSWORD or ""
+    credentials = getattr(request.app.state, "admin_credentials", None)
+    return credentials.current() if credentials else (settings.SP_AUTH_USER or "", settings.SP_AUTH_PASSWORD or "")
 
 
 def _error(
@@ -119,15 +122,20 @@ async def login(request: Request, payload: AuthLoginRequest) -> JSONResponse:
         response.headers["Retry-After"] = str(retry_after)
         return response
 
-    username, password = _configured()
+    username, password = _configured(request)
     # An unconfigured deployment has no pair that could match, and says so with the same code
     # a wrong passphrase gets. The SPA never shows this screen there: /api/auth/status has
     # already told it required=false.
-    ok = bool(username and password) and credentials_match(
-        payload.username, payload.password, username, password
-    )
+    try:
+        ok = bool(username and password) and await verify(
+            credentials_match, payload.username, payload.password, username, password
+        )
+    except VerificationBusy:
+        response = _error(429, "too_many_attempts", "Password checks are busy; try again shortly", {"retry_after": 1})
+        response.headers["Retry-After"] = "1"
+        return response
 
-    if not ok:
+    if not ok or _configured(request) != (username, password):
         failures = limiter.record_failure(client)
         # The attempted username is *not* logged: operators type the passphrase into the
         # username field often enough that it would end up in the log file in clear text.
@@ -141,7 +149,7 @@ async def login(request: Request, payload: AuthLoginRequest) -> JSONResponse:
     response = JSONResponse(status_code=200, content={"ok": True, "username": username})
     response.headers.append(
         "set-cookie",
-        session_cookie_header(request.app.state.auth_sessions.secret, secure=_secure(request)),
+        session_cookie_header(request.app.state.auth_sessions.secret_for((username, password)), secure=_secure(request)),
     )
     return response
 
@@ -167,7 +175,7 @@ async def status(request: Request) -> AuthStatusOut | JSONResponse:
     needed has to guess, and guessing means either a flash of the dashboard on a protected
     deployment or a login form nobody can satisfy on an open one.
     """
-    username, password = _configured()
+    username, password = _configured(request)
     if not (username and password) and settings.SP_ALLOW_UNAUTHENTICATED:
         # Nothing to log in to: every request is already allowed through.
         return AuthStatusOut(authenticated=True, required=False, username=None)
@@ -177,13 +185,23 @@ async def status(request: Request) -> AuthStatusOut | JSONResponse:
     if authorization and not authenticated:
         limiter = _limiter(request)
         peer = _client(request)
-        basic_ok = basic_credentials_ok(authorization, username, password)
+        wait = limiter.retry_after(peer, include_global=is_password_hash(password))
+        if wait:
+            response = _error(429, "too_many_attempts", "Try again later", {"retry_after": wait})
+            response.headers["Retry-After"] = str(wait)
+            return response
+        try:
+            basic_ok = await verify(basic_credentials_ok, authorization, username, password)
+        except VerificationBusy:
+            response = _error(429, "too_many_attempts", "Try again later", {"retry_after": 1})
+            response.headers["Retry-After"] = "1"
+            return response
         wait = limiter.retry_after(peer, include_global=not basic_ok)
         if wait:
             response = _error(429, "too_many_attempts", "Try again later", {"retry_after": wait})
             response.headers["Retry-After"] = str(wait)
             return response
-        authenticated = basic_ok
+        authenticated = basic_ok and _configured(request) == (username, password)
         if authenticated:
             limiter.record_success(peer)
         else:

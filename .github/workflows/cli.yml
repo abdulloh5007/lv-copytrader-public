@@ -1,0 +1,41 @@
+name: CLI portability
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  console:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Isolate tests from owner configuration
+        run: python -c "from pathlib import Path; [p.unlink(missing_ok=True) for p in (Path('.env'), Path('backend/.env'))]"
+      - name: CLI and offline installer tests (no broker or container startup)
+        run: python -m unittest discover -s cli/tests -v
+      - name: Documentation build and link validation
+        run: python -m unittest discover -s documentation/tests -v
+      - name: Shell installer syntax
+        if: runner.os != 'Windows'
+        run: sh -n install.sh
+      - name: PowerShell installer syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'install.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { throw 'PowerShell installer syntax failed.' }

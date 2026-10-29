@@ -5,6 +5,91 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Visible copy feedback and simpler Windows install
+
+- Copy buttons now show an animated checkmark and localized confirmation in the hero
+  and all guides, with clear manual-copy feedback if clipboard access is denied.
+- Reset copy feedback on OS changes and retain only the latest confirmation timer.
+- Shortened the official Windows curl command while preserving complete-script parsing,
+  unchanged execution policy and optional Python setup through the hosted installer.
+
+### Simpler, rounded documentation interface
+
+- Reduced the installation hero to its title, OS tabs, installation command and guide/demo links.
+- Added a persistent macOS beta badge and a short localized note about pending Mac MT5
+  validation and the unavailable local Apple Silicon runtime.
+- Rounded controls, terminals, navigation and search to match the product style; added
+  a sliding OS selection pill, subtle tab bounce and command transition with reduced-motion support.
+
+### Desktop compatibility clarification
+
+- Clarified that SSH mode connects to an existing Linux x64 computer/VPS supplied by
+  the user; hosting is arranged separately from installing the CLI.
+- Marked automatic local Apple Silicon execution as unimplemented/unvalidated and
+  separated CLI portability checks from real MT5/Python/RPC integration validation.
+- Explained the Linux-specific host-library dependencies of the existing ARM/FEX
+  deployment and the remaining Mac validation work in all three documentation languages.
+- Retained runtime architecture guards; changed no broker connection or running service.
+
+### Official documentation and download site
+
+- Added a standalone, pre-rendered docs.lvenc.site site with a minimal installation hero,
+  automatic desktop OS selection, real locally hosted Windows/Apple/Linux SVG logos,
+  copyable shell/PowerShell commands, mobile guidance and dark/light themes.
+- Added eight guides in English, Russian and Uzbek, sidebar/table-of-contents navigation,
+  keyboard search, accessible mobile navigation and code-copy controls.
+- Added an official HTTPS preview distribution manifest with immutable SHA-256 archives,
+  validated public-source exports and download integrity checks; GitHub release tags remain unchanged.
+- Added isolated static deployment and DNS for the documentation subdomain, with no trading restart.
+- Verified desktop OS detection, mobile layouts from 320 px, exact clipboard copying,
+  multilingual search, HTTPS CLI installation, immutable caching and WCAG A/AA checks.
+
+### CLI diagnostics, safe updates and support inbox
+
+- New CLI installs select a free loopback port from 19471 instead of the common 8000;
+  explicit ports fail on collision, SSH installs probe the server, existing ports remain.
+- Added component-aware health/watch, structured doctor output, error groups with next
+  steps, severity/text/time log filters and a bounded private CLI failure journal.
+- Added public update checks and explicit stopped-runtime apply/rollback with durable
+  recovery state, previous source/CLI/image retention and unchanged credentials/volumes.
+- Added local-first minimised support reports and explicit HTTPS submission, a separate
+  encrypted support receiver with expiry, rate/body limits, challenge/replay protection
+  and a durable Telegram/SMTP owner notification outbox. No broker volume is mounted.
+- Added user/agent command contracts, time budgets and support retention instructions;
+  consolidated stale product/deployment notes into current guides and the runbook.
+- Added regressions for port collisions, health readiness, redaction, upload consent,
+  stopped updates/rollback, inbox encryption, abuse limits and independent alert retries.
+
+### Cross-platform installation and LVCT console
+
+- Added a dependency-free `lvct` package and coloured terminal menu with setup, doctor,
+  dependency installation, start/status/logs, local/SSH panel access and password commands.
+- Added curl/shell and PowerShell installers that resolve public revisions to commit IDs,
+  reject unsafe archives, preserve existing configuration and install per-user launchers.
+- Isolated new installations using their own protected environment file, Docker context,
+  image names and owner-labelled volumes. Start does not recreate running services.
+- Added live dashboard password/username rotation using a salted PBKDF2 hash in the data
+  volume; old cookies and WebSocket access expire without restarting the trading process.
+  Container liveness no longer depends on the original bootstrap password. Expensive checks
+  run in bounded workers outside the trading event loop, with pre-verification throttling.
+- Retained password overrides and session/rate-limit state in owner-only snapshot archives,
+  so restoring a private clone does not reactivate the old bootstrap password.
+- Documented Linux amd64 and Docker Desktop paths, SSH runtimes for ARM clients, remaining
+  desktop broker validation, and the separate existing Linux ARM/FEX deployment.
+- Added CLI/offline installer tests and a Linux/Windows/macOS CI matrix, plus backend auth
+  regressions, CLI version consistency and explicit public-export allowlisting.
+
+### Corporate support email
+
+- Configured inbound `support@lvenc.site` forwarding to the owner's existing inbox through
+  Forward Email, using an encrypted DNS rule rather than a public recipient address.
+- Added mail MX/SPF records and verified authoritative/public DNS and website health.
+- Enabled outgoing support mail through Oracle Email Delivery with domain DKIM signing,
+  merged SPF and TLS-authenticated SMTP; preserved incoming forwarding and DMARC.
+- Configured a 90-email-unit daily quota in the sending region to remain below the monthly
+  free allocation, and retained SMTP credentials outside Git. Verified SMTP authentication
+  and acceptance of one owner-approved test message.
+
 ### LV-1 arm movement and cash launchers
 
 - Rebuilt the greeting and money-throwing motions with smoothly articulated arms whose
