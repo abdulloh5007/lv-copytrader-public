@@ -274,6 +274,7 @@ p,.node small,.cap small{letter-spacing:.008em;line-height:1.45}
 .player-actions{display:flex;justify-content:space-between;align-items:center;gap:8px}.transport{display:flex;align-items:center;gap:9px}
 #player-panel button{display:grid;place-items:center;width:36px;height:36px;border:1px solid #ffffff18;border-radius:50%;background:#ffffff08;color:#d5e4f6;font:600 11px Inter,sans-serif;cursor:pointer}
 #player-panel #resume{width:40px;height:40px;background:#eaf4ff;color:#0a1827;border-color:#fff;font-size:15px}
+#vsel-player{min-width:0;max-width:125px;padding:8px 9px;border:1px solid #ffffff33;border-radius:12px;background:#242a36;color:#eef7ff;font:600 11px Inter,sans-serif}#vsel-player:focus-visible{outline:2px solid #8bc7ff;outline-offset:2px}
 #player-panel #hud{display:flex;position:static;gap:7px;opacity:1}#player-panel #hud button{font-size:14px}
 #ctl{left:50%;right:auto;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));white-space:nowrap;pointer-events:none;font:500 10px Inter,sans-serif;z-index:8;opacity:.7}
 #bar{position:absolute;bottom:0;z-index:7;pointer-events:none}
@@ -492,19 +493,19 @@ html[lang="uz"] .s h1{font-size:28px}html[lang="uz"] #bot-title{font-size:20px}h
 <div id="caption-zone" aria-hidden="true"><div id="cap"></div></div><div id="bar"></div>
 <div id="fade"></div><div id="hud"><button id="mm" aria-label="Музыка">♪</button><button id="mv" aria-label="Озвучка">🎙</button></div>
 <div id="ctl">Нажмите — пауза</div>
-<div id="safe-guide"><i></i></div><div id="start"><div class="tag">Промо-ролик · 9:16 · звук включён</div><h1 class="start-brand"><span class="lv-wordmark"><img src="brand/logo.png" alt="LV Copy Trader" width="2172" height="724" decoding="async"></span></h1><div class="opts"><button id="tm2"></button><button id="tv2"></button></div><label class="setting-label" for="language">Язык</label><select id="language" aria-label="Язык"><option value="ru">Русский</option><option value="uz">O‘zbekcha</option><option value="en">English</option></select><select id="vsel" aria-label="Голос"></select><button id="go">▶ Смотреть</button><p>Нажмите на видео, чтобы поставить на паузу.<br>Котировки и сделки — демонстрация.</p></div>
+<div id="safe-guide"><i></i></div><div id="start"><div class="tag">Промо-ролик · 9:16 · звук включён</div><h1 class="start-brand"><span class="lv-wordmark"><img src="brand/logo.png" alt="LV Copy Trader" width="2172" height="724" decoding="async"></span></h1><div class="opts"><button id="tm2"></button><button id="tv2"></button></div><label class="setting-label" for="language">Язык</label><select id="language" aria-label="Язык"><option value="ru">Русский</option><option value="uz">O‘zbekcha</option><option value="en">English</option></select><label class="setting-label" for="vsel">Голос</label><select id="vsel" aria-label="Голос"></select><button id="go">▶ Смотреть</button><p>Нажмите на видео, чтобы поставить на паузу.<br>Котировки и сделки — демонстрация.</p></div>
 </div>
 <div id="top-chrome" aria-hidden="true"></div>
 <div id="player-panel" hidden aria-label="Управление воспроизведением">
 <div class="player-times"><span id="elapsed-time">00:00</span><span id="total-time">01:42</span></div>
 <input id="seek" type="range" min="0" max="102" step="0.01" value="0" aria-label="Перемотка видео">
-<div class="player-actions"><div class="transport"><button id="back" aria-label="Назад на 5 секунд">−5</button><button id="resume" aria-label="Продолжить">▶</button><button id="forward" aria-label="Вперёд на 5 секунд">+5</button></div><div id="audio-controls"></div></div>
+<div class="player-actions"><div class="transport"><button id="back" aria-label="Назад на 5 секунд">−5</button><button id="resume" aria-label="Продолжить">▶</button><button id="forward" aria-label="Вперёд на 5 секунд">+5</button></div><select id="vsel-player" aria-label="Голос"></select><div id="audio-controls"></div></div>
 </div></main>
-<script src="audio/narration.js?v=ivan1"></script>
+<script src="audio/narration-variants.js?v=voices1"></script>
 <script src="audio/narration-uz.js?v=f90951cbb981"></script>
 <script src="audio/narration-en.js?v=1e9c43ffff97"></script>
 <script src="card-relief.js?v=4e610c971c34"></script>
 <script src="film-motion.js?v=cb43e5c58fab"></script>
-<script src="index-inline-1.js?v=ivan1"></script>
+<script src="index-inline-1.js?v=voices1"></script>
 </body>
 </html>

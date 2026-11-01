@@ -5,6 +5,11 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Three film voices in three languages
+
+- Added Ivan, Pavel and Aleksandr recordings in Russian, English and Uzbek, with
+  synchronized word highlighting and voice selection before and during playback.
+
 ### Russian promo-film narration
 
 - Replaced the Russian film narration with ElevenLabs voice Ivan and synchronized

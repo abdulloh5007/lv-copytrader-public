@@ -63,19 +63,30 @@ FX.outroTone=function(offset){
 };
 
 /* ---------- voice ---------- */
-var narration=(i18n.lang==='ru'?window.PROMO_NARRATION:window.PROMO_NARRATIONS?.[i18n.lang])||{},recordedVoice=true,voiceSource=null,voiceGain,voiceBuffers={},voiceDownloads={},voiceGeneration=0;
-Object.values(narration).forEach(function(track){voiceDownloads[track.src]=fetch(track.src).then(function(r){if(!r.ok)throw new Error('Audio unavailable');return r.arrayBuffer()}).catch(function(){return null})});
+var voiceCatalog=window.PROMO_NARRATION_VARIANTS||{},voiceNames={ivan:{ru:'Иван',en:'Ivan',uz:'Ivan'},pavel:{ru:'Павел',en:'Pavel',uz:'Pavel'},aleksandr:{ru:'Александр',en:'Aleksandr',uz:'Aleksandr'}};
+var voiceChoice=new URLSearchParams(location.search).get('voice');
+try{voiceChoice=voiceChoice||localStorage.getItem('lv-film-voice')}catch(e){}
+if(!voiceNames[voiceChoice])voiceChoice='ivan';
+var playerVoice=document.getElementById('vsel-player'),narration=voiceCatalog[voiceChoice]?.[i18n.lang]||{},recordedVoice=true,voiceSource=null,voiceGain,voiceBuffers={},voiceGeneration=0;
 function loadVoices(){
- var selected=sel.value||'recorded';vlist=window.speechSynthesis?speechSynthesis.getVoices().filter(function(v){return new RegExp('^'+i18n.lang,'i').test(v.lang)}):[];
- sel.replaceChildren();var recorded=document.createElement('option');recorded.value='recorded';recorded.textContent=i18n.lang==='ru'?'Иван · ElevenLabs · русский':tr('Денис · нейросетевая озвучка · русский');sel.appendChild(recorded);
- vlist.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=tr('Системный: ')+v.name;sel.appendChild(o)});
- sel.value=selected;if(!sel.value)sel.value='recorded';recordedVoice=sel.value==='recorded';vc=recordedVoice?null:vlist[+sel.value];
+ [sel,playerVoice].forEach(function(control){control.replaceChildren();Object.keys(voiceNames).forEach(function(id){var o=document.createElement('option');o.value=id;o.textContent=voiceNames[id][i18n.lang];control.appendChild(o)});control.value=voiceChoice});
 }
-if(window.speechSynthesis)speechSynthesis.onvoiceschanged=loadVoices;loadVoices();
-sel.onchange=function(){recordedVoice=sel.value==='recorded';vc=recordedVoice?null:vlist[+sel.value]};
+function selectVoice(id){
+ if(!voiceNames[id]||!voiceCatalog[id]?.[i18n.lang])return;
+ voiceChoice=id;narration=voiceCatalog[id][i18n.lang];loadVoices();
+ try{localStorage.setItem('lv-film-voice',id);var u=new URL(location.href);u.searchParams.set('voice',id);history.replaceState(null,'',u.href)}catch(e){}
+ if(!started){
+  humanMarkAt=cueWordTime(1,'Вот сигнал. Отметим цену входа.',i18n.lang==='en'?2:1,3.4);reactionMarkAt=humanMarkAt+window.LVFilmClock.observation;observedCueAt=reactionMarkAt+.2;
+  L.forEach(function(c){if(c[0]===1&&c[2]==='say'&&c[3]==='Две минуты. Вы открыли канал.')c[1]=observedCueAt});
+  botSignalAt=cueWordTime(6,'Сигнал распознан. Позиция уже открыта.',0,3.6);botMarkAt=botSignalAt+.08/.9;botRoute=window.LVSignalRoute.plan(botMarkAt);
+  L.forEach(function(c){if(c[0]===6&&c[2]==='telegramTone')c[1]=botRoute.telegram;if(c[0]===6&&c[2]==='recognizedTone')c[1]=botRoute.bot;if(c[0]===6&&c[2]==='executedTone')c[1]=botRoute.mt});prepareTrade();
+ }
+ if(cs2&&!cs2.complete&&cs2.sourceText)say(cs2.sourceText,1,1);else stopRecorded();
+}
+loadVoices();sel.onchange=function(){selectVoice(sel.value)};playerVoice.onchange=function(){selectVoice(playerVoice.value)};
 function stopRecorded(){voiceGeneration++;if(voiceSource){voiceSource.onended=null;try{voiceSource.stop();voiceSource.disconnect()}catch(e){}voiceSource=null}if(cs2){cs2.sourceStarted=false;cs2.waiting=false}activeVoice=false}
 function recordingBuffer(track){
- if(!voiceBuffers[track.src])voiceBuffers[track.src]=(voiceDownloads[track.src]||fetch(track.src).then(function(r){return r.arrayBuffer()})).then(function(bytes){if(!bytes)throw new Error('Audio unavailable');return AC.decodeAudioData(bytes.slice(0))});return voiceBuffers[track.src];
+ if(!voiceBuffers[track.src])voiceBuffers[track.src]=fetch(track.src).then(function(r){if(!r.ok)throw new Error('Audio unavailable');return r.arrayBuffer()}).then(function(bytes){return AC.decodeAudioData(bytes.slice(0))}).catch(function(error){delete voiceBuffers[track.src];throw error});return voiceBuffers[track.src];
 }
 function playRecorded(c,offset){
  if(!voiceOn||!play||cs2!==c)return;stopRecorded();initAudio();var generation=voiceGeneration;activeVoice=true;c.waiting=true;
@@ -117,7 +128,7 @@ function say(txt,p,r){
  stopRecorded();
  var rate=(r||.98)*.99,words=txt.trim().split(/\s+/),starts=[],spoken='';
  words.forEach(function(w){starts.push(spoken.length);spoken+=(i18n.lang==='ru'?w.replace(/^LV$/,'Эл Ви').replace(/^Copy$/,'Копи').replace(/^Trader([.,!?]?)$/,'Трейдер$1').replace(/waitlist/i,'списку ожидания'):w)+' '});
- var me=cs2={words:words,starts:starts,spoken:spoken,groups:chunks(words),group:-1,clock:0,dur:spoken.length/(13*rate)+.3,boundaries:false,complete:false,hold:0,idx:-1};
+ var me=cs2={sourceText:sourceText,words:words,starts:starts,spoken:spoken,groups:chunks(words),group:-1,clock:0,dur:spoken.length/(13*rate)+.3,boundaries:false,complete:false,hold:0,idx:-1};
  cap.style.opacity=1;paintWords(me,0);
  var track=recordedVoice?narration[sourceText]:null;if(track){me.recorded=true;me.track=track;me.dur=track.duration;me.boundaries=true;if(voiceOn)playRecorded(me,0);return}
  if(voiceOn&&window.speechSynthesis&&vlist.length){
