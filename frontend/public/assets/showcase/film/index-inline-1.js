@@ -67,7 +67,7 @@ var narration=(i18n.lang==='ru'?window.PROMO_NARRATION:window.PROMO_NARRATIONS?.
 Object.values(narration).forEach(function(track){voiceDownloads[track.src]=fetch(track.src).then(function(r){if(!r.ok)throw new Error('Audio unavailable');return r.arrayBuffer()}).catch(function(){return null})});
 function loadVoices(){
  var selected=sel.value||'recorded';vlist=window.speechSynthesis?speechSynthesis.getVoices().filter(function(v){return new RegExp('^'+i18n.lang,'i').test(v.lang)}):[];
- sel.replaceChildren();var recorded=document.createElement('option');recorded.value='recorded';recorded.textContent=tr('Денис · нейросетевая озвучка · русский');sel.appendChild(recorded);
+ sel.replaceChildren();var recorded=document.createElement('option');recorded.value='recorded';recorded.textContent=i18n.lang==='ru'?'Иван · ElevenLabs · русский':tr('Денис · нейросетевая озвучка · русский');sel.appendChild(recorded);
  vlist.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=tr('Системный: ')+v.name;sel.appendChild(o)});
  sel.value=selected;if(!sel.value)sel.value='recorded';recordedVoice=sel.value==='recorded';vc=recordedVoice?null:vlist[+sel.value];
 }

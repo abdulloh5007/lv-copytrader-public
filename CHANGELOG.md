@@ -5,6 +5,11 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Russian promo-film narration
+
+- Replaced the Russian film narration with ElevenLabs voice Ivan and synchronized
+  word highlighting using the new audio timing data.
+
 ### Visible copy feedback and simpler Windows install
 
 - Copy buttons now show an animated checkmark and localized confirmation in the hero
