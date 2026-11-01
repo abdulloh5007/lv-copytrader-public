@@ -5,6 +5,11 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Minimal film player
+
+- Simplified the film opening and replaced the pause card with centered playback
+  controls and a bottom control bar, removing the on-screen pause prompt.
+
 ### Cinematic film controls
 
 - Redesigned the film opening and pause controls with custom icons, clear voice

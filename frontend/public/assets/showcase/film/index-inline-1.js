@@ -2,11 +2,11 @@
 (function(){
 var i18n=window.LV_I18N,tr=i18n.t;i18n.apply(document);
 var D=[6,92,9.5,10.5,12,8,92,10,5.6],T=D.reduce(function(a,b){return a+b},0);
-var st=document.getElementById('stage'),sc=[].slice.call(document.querySelectorAll('.s')),bar=document.getElementById('bar'),ctl=document.getElementById('ctl'),cap=document.getElementById('cap'),tm=document.getElementById('tm'),hp=document.getElementById('hp'),pr=document.getElementById('pr'),fade=document.getElementById('fade'),sel=document.getElementById('vsel');
+var st=document.getElementById('stage'),sc=[].slice.call(document.querySelectorAll('.s')),bar=document.getElementById('bar'),cap=document.getElementById('cap'),tm=document.getElementById('tm'),hp=document.getElementById('hp'),pr=document.getElementById('pr'),fade=document.getElementById('fade'),sel=document.getElementById('vsel');
 var motionClock=0,idleT=0,LEAD=0,el=LEAD,cur=-1,play=false,done=false,started=false,music=true,voiceOn=true,last=performance.now(),fired=[],AC,master,bus,dly,nb,en=0,nextT=0,step=0,sT=0,vc,vlist=[];
 var vp=document.getElementById('viewport'),panel=document.getElementById('player-panel'),seek=document.getElementById('seek'),resumeButton=document.getElementById('resume'),seeked=false;
 document.getElementById('top-chrome').append(document.getElementById('tk'));
-vp.append(ctl,bar);document.getElementById('audio-controls').append(document.getElementById('hud'));seek.max=T;document.getElementById("total-time").textContent=clockLabel(T);
+vp.append(bar);document.getElementById('audio-controls').append(document.getElementById('hud'));seek.max=T;document.getElementById("total-time").textContent=clockLabel(T);
 var flowNodes=Array.from(sc[3].querySelectorAll('.node')),flowLinks=Array.from(sc[3].querySelectorAll('.cn'));
 var flowActivation=[1.85,3.25,5.25,7.45];
 var flowLabels=[tr('Источник подключён'),tr('Параметры извлечены'),tr('Подключение активно'),tr('Отчёт готов')];
@@ -357,7 +357,7 @@ if(play&&!done){
  var proposed=el+dt;
  // Let the voice finish before the next phrase or scene: never cut off words.
  if(activeVoice&&cur>=0){var base=0;for(var j=0;j<cur;j++)base+=D[j];var barrier=base+D[cur];L.forEach(function(c,k){if(c[0]===cur&&c[2]==='say'&&!fired[k])barrier=Math.min(barrier,base+c[1])});proposed=Math.min(proposed,Math.max(el,barrier-.002))}
- el=proposed;if(el>=T){el=T;done=true;play=false;st.classList.add('paused');en=0;ctl.textContent=tr('Повторить ↺')}
+ el=proposed;if(el>=T){el=T;done=true;play=false;st.classList.add('paused');en=0}
 }
 var t=el,i=0;while(i<D.length-1&&t>=D[i]){t-=D[i];i++}
 sT=t;if(started&&el>=0&&i!==cur)show(i);updatePresentation(t,i);var lp=draw(play?dt:0);
@@ -378,7 +378,7 @@ st.classList.remove('paused');seeked=false;fadeIn();last=performance.now();syncP
 lab();i18n.initFilmLanguage();
 function clockLabel(seconds){seconds=Math.floor(seconds);return p2(Math.floor(seconds/60))+':'+p2(seconds%60)}
 function syncPlayer(){
- panel.hidden=!started||(play&&!done);ctl.hidden=!started||!play||done||st.classList.contains('idle');vp.classList.toggle('paused',!play);
+ panel.hidden=!started||(play&&!done);vp.classList.toggle('paused',!play);
  if(!seek.matches(':active'))seek.value=el;seek.style.setProperty('--progress',(el/T*100)+'%');seek.setAttribute('aria-valuetext',clockLabel(el)+tr(' из ')+clockLabel(T));
  var label=clockLabel(el);if(document.getElementById('elapsed-time').textContent!==label)document.getElementById('elapsed-time').textContent=label;
  resumeButton.classList.toggle('is-replay',done);resumeButton.setAttribute('aria-label',done?tr('Смотреть заново'):tr('Продолжить'));
@@ -386,7 +386,7 @@ function syncPlayer(){
 function togglePlayback(){
  idleT=0;st.classList.remove('idle');if(!started)return;
  if(done){prepareTrade();motionClock=0;filmMotion.seek(0);el=LEAD;done=false;cur=-1;step=0;snapCamera=true;sc.forEach(function(s){s.classList.remove('on')});play=false;seeked=false}
- play=!play;st.classList.toggle('paused',!play);ctl.textContent=tr('Нажмите — пауза');
+ play=!play;st.classList.toggle('paused',!play);
  var resumeEnding=play&&seeked&&cur===8;
  if(play&&seeked){var pad=L.filter(function(c){return c[2]==='pad'&&c[0]<=cur}).pop();en=cur===8?0:({tense:1,mid:2,bright:2,end:3})[pad&&pad[3]]||0;if(AC)nextT=AC.currentTime+.1;if(cs2&&!cs2.complete&&voiceOn){if(cs2.recorded)playRecorded(cs2,cs2.clock);else{var remaining=cs2.words.slice(Math.max(0,cs2.idx)).join(' ');say(remaining,1,1)}}seeked=false}
  if((music||voiceOn)&&play)initAudio();if(resumeEnding)FX.outroTone(sT);if(play&&voiceOn&&cs2&&cs2.recorded&&!cs2.complete&&!voiceSource&&!cs2.waiting)playRecorded(cs2,cs2.clock);if(AC){play?AC.resume():AC.suspend()}if(window.speechSynthesis){play?speechSynthesis.resume():speechSynthesis.pause()}last=performance.now();syncPlayer();
