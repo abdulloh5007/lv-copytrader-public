@@ -5,6 +5,11 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Cinematic film controls
+
+- Redesigned the film opening and pause controls with custom icons, clear voice
+  and sound settings, responsive layout and reduced-motion support.
+
 ### Three film voices in three languages
 
 - Added Ivan, Pavel and Aleksandr recordings in Russian, English and Uzbek, with

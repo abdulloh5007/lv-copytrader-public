@@ -366,7 +366,9 @@ if(cur===0){digits(hp,lp,!play);hp.style.color=vel>=0?'':'#ff5b5b'}
 bar.style.width=Math.max(0,el/T*100)+'%';syncPlayer();requestAnimationFrame(tick)}
 function fadeIn(){return;fade.style.transition='none';fade.style.opacity=1;fade.offsetHeight;fade.style.transition='';fade.style.opacity=0}
 var bm=document.getElementById('tm2'),bv=document.getElementById('tv2'),mm=document.getElementById('mm'),mv=document.getElementById('mv');
-function lab(){bm.textContent='♪ '+tr('Музыка')+': '+tr(music?'вкл':'выкл');bv.textContent='🎙 '+tr('Озвучка')+': '+tr(voiceOn?'вкл':'выкл');mm.style.opacity=music?1:.4;mv.style.opacity=voiceOn?1:.4}
+function lab(){
+ [[bm,mm,music,'Музыка'],[bv,mv,voiceOn,'Озвучка']].forEach(function(group){var label=tr(group[3])+': '+tr(group[2]?'вкл':'выкл');group[0].querySelector('.toggle-label').textContent=tr(group[3]);[group[0],group[1]].forEach(function(button){button.classList.toggle('is-off',!group[2]);button.setAttribute('aria-pressed',String(group[2]));button.setAttribute('aria-label',label);button.title=label})});
+}
 function togM(e){e.stopPropagation();music=!music;if(music&&started)initAudio();if(music&&play&&cur===8)FX.outroTone(sT);syncMusicEnvelope(true);lab()}
 function togV(e){e.stopPropagation();voiceOn=!voiceOn;if(!voiceOn)stopRecorded();else if(play&&cs2&&cs2.recorded&&!cs2.complete)playRecorded(cs2,cs2.clock);if(!voiceOn&&window.speechSynthesis){speechSynthesis.cancel();activeVoice=false;if(cs2){cs2.boundaries=false;cs2.dur=Math.max(cs2.dur,cs2.clock+.8)}}setBus();lab()}
 bm.onclick=mm.onclick=togM;bv.onclick=mv.onclick=togV;sel.onclick=function(e){e.stopPropagation()};
@@ -379,7 +381,7 @@ function syncPlayer(){
  panel.hidden=!started||(play&&!done);ctl.hidden=!started||!play||done||st.classList.contains('idle');vp.classList.toggle('paused',!play);
  if(!seek.matches(':active'))seek.value=el;seek.style.setProperty('--progress',(el/T*100)+'%');seek.setAttribute('aria-valuetext',clockLabel(el)+tr(' из ')+clockLabel(T));
  var label=clockLabel(el);if(document.getElementById('elapsed-time').textContent!==label)document.getElementById('elapsed-time').textContent=label;
- resumeButton.textContent=done?'↺':'▶';resumeButton.setAttribute('aria-label',done?tr('Смотреть заново'):tr('Продолжить'));
+ resumeButton.classList.toggle('is-replay',done);resumeButton.setAttribute('aria-label',done?tr('Смотреть заново'):tr('Продолжить'));
 }
 function togglePlayback(){
  idleT=0;st.classList.remove('idle');if(!started)return;
