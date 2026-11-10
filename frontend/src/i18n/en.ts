@@ -75,6 +75,8 @@ export const en = {
   'waitlist.story_preview': 'Preview of the LV Copy Trader interactive website',
   'waitlist.story': 'Explore the story',
   'waitlist.source': 'Source code',
+  'waitlist.docs': 'Documentation',
+  'public.footer_navigation': 'Footer navigation',
   'waitlist.hosting_title': 'On your VPS',
   'waitlist.hosting_note': 'Run it on your own server. A shared cloud service is not available yet.',
   'waitlist.control_title': 'Your account and settings',
@@ -613,10 +615,11 @@ export const en = {
   'settings.balance': 'Balance',
 
   'settings.provider_hint':
-    'Anthropic, or any endpoint that speaks the OpenAI chat-completions API.',
+    'Use Codex, Anthropic, or an OpenAI-compatible endpoint.',
   'settings.kind': 'Provider',
   'settings.anthropic': 'Anthropic',
   'settings.openai_compatible': 'OpenAI-compatible',
+  'settings.codex_note': 'Uses a separately connected local Codex session. GPT-6.1 Terra runs with medium reasoning.',
   'settings.base_url': 'Base URL',
   'settings.base_url_hint':
     'With or without a trailing /v1 — both are normalized to the same request.',
@@ -651,7 +654,7 @@ export const en = {
   'settings.override_hint':
     'Self-hosted endpoints defeat any heuristic — override what the probe found if you know better.',
   'settings.subscription_note':
-    'Consumer Claude and ChatGPT subscriptions have no public API, so LV Copytrader cannot trade on a subscription plan. Use an API key from Anthropic or OpenAI, or any OpenAI-compatible base URL — OpenRouter, Groq, Together, LiteLLM, vLLM, LM Studio and a local Ollama all work — and the extra-headers field covers a gateway you run yourself.',
+    'Use an API key or an OpenAI-compatible endpoint. Select Codex to use a connected ChatGPT session.',
   'settings.vision_required_note':
     'A model that cannot read images will skip every chart screenshot the channel posts.',
 

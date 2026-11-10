@@ -38,6 +38,18 @@
 .public-footer a {
   color: var(--text-dim);
 }
+.public-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 20px;
+}
+.public-footer__links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.public-footer__links a:hover { color: var(--text); }
 .waitlist {
   width: 100%;
   max-width: 720px;

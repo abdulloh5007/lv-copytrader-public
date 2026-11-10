@@ -56,6 +56,59 @@ services:
       start_period: 40s
       retries: 5
 
+  # Optional local Codex app-server. The session and executable must be prepared
+  # separately in the data volume; this profile never publishes the port.
+  codex:
+    profiles: ["codex"]
+    image: ${LVCT_APP_IMAGE:-lvct-app:latest}
+    network_mode: "service:app"
+    depends_on:
+      app:
+        condition: service_started
+        restart: true
+    user: "10001:10001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+    volumes:
+      - type: volume
+        source: lvCT-data
+        target: /opt/lvct-codex
+        read_only: true
+        volume:
+          subpath: lvct-codex
+      - type: volume
+        source: lvCT-data
+        target: /home/signalpilot/.codex
+        volume:
+          subpath: lvct-codex/session
+    entrypoint: ["/opt/lvct-codex/codex"]
+    command:
+      - app-server
+      - --listen
+      - ws://127.0.0.1:18477
+      - --ws-auth
+      - capability-token
+      - --ws-token-file
+      - /home/signalpilot/.codex/ws-token
+      - --disable
+      - shell_tool
+      - --disable
+      - unified_exec
+      - --disable
+      - multi_agent
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 18477), timeout=3).close()"]
+      interval: 15s
+      timeout: 4s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
   # =====================================================================================
   # MetaTrader 5 under Wine. Trading logic never runs in here — this service only exposes
   # the whitelisted JSON-RPC surface that app/trading/rpc.py calls.

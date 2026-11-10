@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from app.reviewer.layout import (
     BACKUP_DIR,
     BRIEF_FILE,
     CURRENT_DIR,
+    IDENTITY_FILE,
     META_FILE,
     REVIEWER_DIR,
     ROOT_DIR,
@@ -98,7 +100,7 @@ def attempts_for(data_dir: str | Path, chat_id: int) -> int:
 
 
 def clip_lines(text: str, max_lines: int) -> str:
-    """Keep at most ``max_lines`` non-empty-trailing lines."""
+    """Keep a bounded number of lines and characters, even for one huge line."""
     lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     while lines and not lines[-1].strip():
         lines.pop()
@@ -106,7 +108,7 @@ def clip_lines(text: str, max_lines: int) -> str:
         lines = lines[:max_lines]
     if not lines:
         return ""
-    return "\n".join(lines).rstrip() + "\n"
+    return "\n".join(lines)[:12000].rstrip() + "\n"
 
 
 def write_meta(data_dir: str | Path, meta: dict[str, Any]) -> None:
@@ -132,6 +134,9 @@ def write_ready(
     """
     clipped = clip_lines(brief, max_lines)
     _atomic_write(_active_brief(data_dir), clipped)
+    _atomic_write(_root(data_dir) / ACTIVE_DIR / IDENTITY_FILE, json.dumps({
+        "chat_id": int(meta["chat_id"]), "generation": uuid.uuid4().hex,
+    }))
     _atomic_write(
         _current_dir(data_dir) / STUDY_FILE,
         json.dumps(study, ensure_ascii=False, indent=2, default=_json_default),
@@ -151,12 +156,13 @@ def backup_current(data_dir: str | Path) -> Path | None:
     """
     brief = _active_brief(data_dir)
     current = _current_dir(data_dir)
+    identity = _root(data_dir) / ACTIVE_DIR / IDENTITY_FILE
     meta_path = current / META_FILE
     study_path = current / STUDY_FILE
     have_brief = brief.is_file()
     have_meta = meta_path.is_file()
     have_study = study_path.is_file()
-    if not (have_brief or have_meta or have_study):
+    if not (have_brief or have_meta or have_study or identity.is_file()):
         return None
 
     meta = _read_json(meta_path) or {}
@@ -171,6 +177,8 @@ def backup_current(data_dir: str | Path) -> Path | None:
         suffix += 1
         destination = _backup_root(data_dir) / f"c{chat_id}_{stamp}_{suffix}"
     destination.mkdir(parents=True, exist_ok=False)
+    if identity.is_file():
+        os.replace(identity, destination / IDENTITY_FILE)
     if have_brief:
         os.replace(brief, destination / BRIEF_FILE)
     if have_meta:

@@ -79,9 +79,16 @@ class FakeBotApi:
         #: never appear in here as anything but ``None``.
         self.offsets: list[int | None] = []
         self.polls = 0
+        self.allowed_update_sets: list[list[str]] = []
         self.methods: list[str] = []
         self.command_menus: list[dict[str, Any]] = []
         self.deleted_commands: list[dict[str, Any]] = []
+        self.menu_widgets: list[dict[str, Any]] = []
+        self.menu_edits: list[tuple[str, dict[str, Any]]] = []
+        self.callback_answers: list[dict[str, Any]] = []
+        self.widget_answers: list[dict[str, Any]] = []
+        self.widget_unsupported = False
+        self.edit_error = False
 
     def deliver_at(self, poll_index: int, update: dict[str, Any]) -> None:
         """Queue `update` to become visible just before poll number `poll_index` answers."""
@@ -108,6 +115,7 @@ class FakeBotApi:
                 },
             )
         if method == "getUpdates":
+            self.allowed_update_sets.append(json.loads(request.url.params.get("allowed_updates", "[]")))
             for update in self.arrivals.pop(self.polls, []):
                 self.updates.append(update)
             self.polls += 1
@@ -120,6 +128,22 @@ class FakeBotApi:
                 if offset is None or int(update["update_id"]) >= offset
             ]
             return httpx.Response(200, json={"ok": True, "result": batch})
+        if method == "sendWidget" and (self._json_body(request).get("allow_queries") or "inline_keyboard" in self._json_body(request).get("reply_markup", {})):
+            if self.widget_unsupported:
+                return httpx.Response(404, json={"ok": False, "description": "method not found"})
+            self.menu_widgets.append(self._json_body(request))
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 901, "widget": {}}})
+        if method == "answerCallbackQuery":
+            self.callback_answers.append(self._json_body(request))
+            return httpx.Response(200, json={"ok": True, "result": True})
+        if method == "answerWidgetQuery":
+            self.widget_answers.append(self._json_body(request))
+            return httpx.Response(200, json={"ok": True, "result": True})
+        if method in {"editMessageWidgetData", "editMessageText"}:
+            self.menu_edits.append((method, self._json_body(request)))
+            if self.edit_error:
+                return httpx.Response(400, json={"ok": False, "description": "message cannot be edited"})
+            return httpx.Response(200, json={"ok": True, "result": True})
         if method == "sendMessage":
             self.sent.append(json.loads(request.content.decode("utf-8")))
             return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
@@ -785,10 +809,10 @@ async def test_the_bound_account_is_reported_as_strings_never_nulls(
 
 
 def test_bot_command_menu_is_signalpilot_not_the_legacy_advisor_set() -> None:
-    """The registered set is start/status/help in both locales; leftovers stay gone."""
+    """The read-only commands are registered in both locales; leftovers stay gone."""
     for locale in ("en", "ru"):
         names = [item["command"] for item in bot_command_menu(locale)]
-        assert names == ["start", "status", "help"]
+        assert names == ["start", "menu", "status", "account", "positions", "orders", "signals", "help"]
         assert LEGACY_BOT_COMMANDS.isdisjoint(names)
         for item in bot_command_menu(locale):
             assert item["description"].strip()
@@ -947,7 +971,7 @@ async def test_detect_still_binds_start_and_answers_it_once(
 async def test_start_registers_slash_commands_and_not_legacy_ones(
     data_dir: Path, fast_polls: None
 ) -> None:
-    """Boot must own BotFather's menu: delete leftovers, then write start/status/help."""
+    """Boot replaces leftover commands with the read-only LV Copytrader menu."""
     notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
     try:
         await notifier.start()
@@ -960,7 +984,7 @@ async def test_start_registers_slash_commands_and_not_legacy_ones(
         for menu in api.command_menus:
             for item in menu.get("commands") or []:
                 names.add(item["command"])
-        assert names == {"start", "status", "help"}
+        assert names == {"start", "menu", "status", "account", "positions", "orders", "signals", "help"}
         assert LEGACY_BOT_COMMANDS.isdisjoint(names)
         assert "deleteWebhook" not in api.methods
     finally:
@@ -994,7 +1018,7 @@ async def test_token_rotation_re_registers_commands(
         for menu in api.command_menus
         for item in menu.get("commands") or []
     }
-    assert names == {"start", "status", "help"}
+    assert names == {"start", "menu", "status", "account", "positions", "orders", "signals", "help"}
     assert LEGACY_BOT_COMMANDS.isdisjoint(names)
 
 
@@ -1010,3 +1034,170 @@ async def test_help_follows_the_notifier_locale(
     assert "Команды" in api.sent[0]["text"]
     assert_no_button_keyboard(api.sent[0])
 
+
+
+async def test_new_read_only_commands_report_broker_data_without_trading(data_dir, fast_polls):
+    from types import SimpleNamespace
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    class ReadOnlyExecutor:
+        async def get_account(self):
+            return {'ok': True, 'balance': 1000, 'equity': 990, 'floating_profit': -10,
+                    'margin_free': 800, 'currency': 'USD'}
+        async def get_recent_signals(self, limit):
+            return {'ok': True, 'signals': [{'message_id': 1, 'text': '60-65 sell', 'kind': 'text'}]}
+    class ReadOnlyRpc:
+        async def positions_get(self):
+            return [SimpleNamespace(symbol='XAUUSD', type=1, ticket=123, magic=app_settings.MAGIC_NUMBER,
+                                    volume=.1, price_open=4100, sl=4115, tp=4080, profit=-10)]
+        async def orders_get(self): return []
+    notifier._runtime.executor = ReadOnlyExecutor()
+    notifier._runtime.rpc = ReadOnlyRpc()
+    for command, fragment in [('/account','1000'),('/positions','XAUUSD'),('/orders','None'),('/signals','60-65 sell')]:
+        api.sent.clear()
+        assert await notifier.handle_sender_command(sender_of(message_update(1, ADMIN_ID, text=command)))
+        assert len(api.sent) == 1 and fragment in api.sent[0]['text']
+    assert 'SL' in (await notifier._render_readonly_command('positions', 'en'))
+
+
+async def test_private_read_commands_refuse_strangers_groups_and_unavailable_broker(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[], chat_id=ADMIN_ID)
+    stranger = sender_of(message_update(1, STRANGER_ID, text='/account'))
+    assert not await notifier.handle_sender_command(stranger)
+    group = message_update(2, ADMIN_ID, chat_id=ADMIN_ID, text='/positions')
+    group['message']['chat']['type'] = 'group'
+    assert not await notifier.handle_sender_command(sender_of(group))
+    assert api.sent == []
+    class Unavailable:
+        async def positions_get(self): return None
+    notifier._runtime.rpc = Unavailable()
+    notifier._runtime.executor = object()
+    result = await notifier._render_readonly_command('positions', 'en')
+    assert 'Data unavailable' in result
+    assert 'None' not in result
+
+
+def menu_callback(update_id, user_id, *, chat_id=None, tab='status', widget=True, chat_type='private'):
+    message = {'message_id': 901, 'chat': {'id': user_id if chat_id is None else chat_id, 'type': chat_type}}
+    if widget: message['widget'] = {}
+    return {'update_id': update_id, 'callback_query': {'id': f'cb-{update_id}', 'from': {'id': user_id},
+            'data': 'lvct:menu:' + ('w:' if widget else 't:') + tab, 'message': message}}
+
+
+async def test_menu_is_one_widget_and_buttons_edit_the_same_message(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    class ReadOnly:
+        async def get_account(self):
+            return {'ok': True, 'balance': 1234, 'equity': 1200, 'floating_profit': -34,
+                    'margin_free': 1000, 'currency': 'USD'}
+    notifier._runtime.executor = ReadOnly()
+    assert await notifier.handle_sender_command(sender_of(message_update(1, ADMIN_ID, text='/menu')))
+    assert len(api.menu_widgets) == 1 and not api.sent
+    card = api.menu_widgets[0]
+    assert 'caption' not in card and 'chat_data' in card
+    assert card['allow_queries'] is True and 'reply_markup' not in card
+    assert card['html'].count('<button class="tab"') == 6
+    api.updates.append(menu_callback(4, ADMIN_ID, tab='account'))
+    await notifier._poll_commands_once()
+    assert api.callback_answers == [{'callback_query_id': 'cb-4'}]
+    assert 'callback_query' in api.allowed_update_sets[-1]
+    assert len(api.menu_edits) == 1 and api.menu_edits[0][0] == 'editMessageWidgetData'
+    params = api.menu_edits[0][1]
+    assert params['message_id'] == 901 and params['chat_id'] == ADMIN_ID
+    assert '1234' in params['chat_data'] and len(params['chat_data'].encode()) <= 1024
+    assert len(api.menu_widgets) == 1 and not api.sent
+
+
+async def test_menu_buttons_refuse_strangers_groups_and_unrecognised_actions(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    api.updates.extend([menu_callback(4, STRANGER_ID, tab='account'),
+                        menu_callback(5, ADMIN_ID, chat_id=-123, chat_type='group', tab='account'),
+                        menu_callback(6, ADMIN_ID, tab='close_all')])
+    await notifier._poll_commands_once()
+    assert len(api.callback_answers) == 3
+    assert not api.menu_edits and not api.sent and not api.menu_widgets
+
+
+async def test_menu_falls_back_to_one_editable_text_when_widget_unsupported(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    api.widget_unsupported = True
+    assert await notifier.handle_sender_command(sender_of(message_update(1, ADMIN_ID, text='/menu')))
+    assert len(api.sent) == 1 and api.sent[0]['reply_markup']['inline_keyboard']
+    api.updates.append(menu_callback(4, ADMIN_ID, tab='help', widget=False))
+    await notifier._poll_commands_once()
+    assert len(api.menu_edits) == 1 and api.menu_edits[0][0] == 'editMessageText'
+    assert api.menu_edits[0][1]['message_id'] == 901 and '/status' in api.menu_edits[0][1]['text']
+    assert len(api.sent) == 1
+
+
+def test_menu_state_never_truncates_a_large_trade_list():
+    from app.telegram.notifier import Notifier
+    state = Notifier._menu_state('<b>Positions</b>\n' + 'very long €' * 150, 'en')
+    assert len(state.encode('utf-8')) <= 1024
+    assert 'Too much data' in json.loads(state)['lines'][0]
+
+
+def test_menu_widget_meets_telegram_size_limits():
+    import zlib
+    from app.telegram.widget import build_menu_widget
+    widget = build_menu_widget().encode('utf-8')
+    assert len(widget) <= 32768 and len(zlib.compress(widget, 9)) <= 4096
+    assert b'chatDataChanged' in widget and b'fetch(' not in widget
+
+
+async def test_menu_widget_callback_does_not_depend_on_widget_field(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    event = menu_callback(4, ADMIN_ID, tab='status')
+    del event['callback_query']['message']['widget']
+    api.updates.append(event)
+    await notifier._poll_commands_once()
+    assert api.menu_edits and api.menu_edits[0][0] == 'editMessageWidgetData'
+
+
+def widget_menu_query(update_id, user_id, *, chat_id=None, tab='status', chat_type='private', qtype='data'):
+    return {'update_id': update_id, 'widget_query': {'id': f'wq-{update_id}', 'from': {'id': user_id},
+            'chat': {'id': user_id if chat_id is None else chat_id, 'type': chat_type},
+            'message_id': 901, 'type': {'type': qtype}, 'data': 'lvct:menu:' + tab}}
+
+
+async def test_internal_buttons_update_same_widget_and_answer_query(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    class ReadOnly:
+        async def get_account(self):
+            return {'ok': True, 'balance': 1234, 'equity': 1200, 'floating_profit': -34, 'margin_free': 1000, 'currency': 'USD'}
+    notifier._runtime.executor = ReadOnly()
+    api.updates.append(widget_menu_query(4, ADMIN_ID, tab='account'))
+    await notifier._poll_commands_once()
+    assert 'widget_query' in api.allowed_update_sets[-1]
+    assert len(api.menu_edits) == 1 and api.menu_edits[0][0] == 'editMessageWidgetData'
+    edit = api.menu_edits[0][1]
+    assert edit['message_id'] == 901 and edit['chat_id'] == ADMIN_ID
+    assert json.loads(edit['chat_data'])['tab'] == 'account' and '1234' in edit['chat_data']
+    assert len(api.widget_answers) == 1 and json.loads(api.widget_answers[0]['data'])['ok'] is True
+    assert not api.sent and not api.menu_widgets
+
+
+async def test_internal_buttons_reject_strangers_groups_wrong_actions_and_query_types(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    api.updates.extend([widget_menu_query(4, STRANGER_ID, tab='account'),
+                        widget_menu_query(5, ADMIN_ID, chat_id=-123, chat_type='group'),
+                        widget_menu_query(6, ADMIN_ID, tab='close_all'),
+                        widget_menu_query(7, ADMIN_ID, qtype='sign_data')])
+    await notifier._poll_commands_once()
+    assert not api.menu_edits and len(api.widget_answers) == 4
+    assert all(json.loads(answer['data'])['ok'] is False for answer in api.widget_answers)
+
+
+async def test_internal_button_reports_unsuccessful_edit(data_dir, fast_polls):
+    notifier, api, _bus = await build(data_dir, admin_ids=[ADMIN_ID], chat_id=ADMIN_ID)
+    api.edit_error = True
+    api.updates.append(widget_menu_query(4, ADMIN_ID))
+    await notifier._poll_commands_once()
+    assert len(api.menu_edits) == 1
+    assert json.loads(api.widget_answers[0]['data'])['ok'] is False
+
+
+def test_menu_state_avoids_clipping_long_wrapped_lines():
+    from app.telegram.notifier import Notifier
+    body = '<b>Positions</b>\n' + '\n'.join('X' * 80 for _ in range(5))
+    state = json.loads(Notifier._menu_state(body, 'en', 'positions'))
+    assert state['tab'] == 'positions' and 'Too much data' in state['lines'][0]

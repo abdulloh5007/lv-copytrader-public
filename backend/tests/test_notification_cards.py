@@ -72,14 +72,18 @@ def test_ladder_and_pending_and_partial_have_own_status():
     assert "ЧАСТИЧНЫЙ ВХОД" in n.render_opened(partial_fill=True, **entry())
 
 
-@pytest.mark.parametrize("unsupported", [False, True])
-async def test_native_rich_api_and_explicit_fallback(unsupported):
+@pytest.mark.parametrize("unsupported,expected", [
+    (set(), ["sendWidget"]),
+    ({"sendWidget"}, ["sendWidget", "sendRichMessage"]),
+    ({"sendWidget", "sendRichMessage"}, ["sendWidget", "sendRichMessage", "sendMessage"]),
+])
+async def test_widget_api_and_explicit_fallback(unsupported, expected):
     n = notifier()
     requests = []
 
     def handler(request):
         requests.append((request.url.path.rsplit("/", 1)[-1], json.loads(request.content)))
-        if unsupported and requests[-1][0] == "sendRichMessage":
+        if requests[-1][0] in unsupported:
             return httpx.Response(404, json={"ok": False, "description": "Method not found"})
         return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
@@ -88,12 +92,52 @@ async def test_native_rich_api_and_explicit_fallback(unsupported):
     n._record = _record
     try:
         assert await n.send("opened", n.render_opened(**entry()))
-        assert requests[0][0] == "sendRichMessage"
-        assert requests[0][1]["rich_message"]["html"].startswith("<h3>")
-        assert "parse_mode" not in requests[0][1]
-        assert [r[0] for r in requests] == (["sendRichMessage", "sendMessage"] if unsupported else ["sendRichMessage"])
+        assert [r[0] for r in requests] == expected
+        widget = requests[0][1]
+        assert "<html>" in widget["html"] and "LV COPYTRADER" in widget["html"]
+        assert "0.20" in widget["html"] and "caption" not in widget
+        assert "rich_message" not in widget and "parse_mode" not in widget
+        if "sendRichMessage" in expected:
+            rich = next(body for method, body in requests if method == "sendRichMessage")
+            assert rich["rich_message"]["html"].startswith("<h3>")
+            assert "parse_mode" not in rich
     finally:
         await n.stop()
+
+
+async def test_group_and_oversize_messages_use_rich_format():
+    n = notifier(); requests = []
+    def handler(request):
+        requests.append((request.url.path.rsplit("/", 1)[-1], json.loads(request.content)))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+    n._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async def group(): return NotifierConfig(token="test", chat_id=-100123, enabled=True, locale="ru")
+    n._load_config = group; n._record = _record
+    try:
+        assert await n.send("closed", n.render_closed(symbol="XAUUSDm", close_cause="sl"))
+        assert requests[-1][0] == "sendRichMessage"
+        n._load_config = _config
+        assert await n.send("attention", "<b>Attention</b>\n" + "large " * 200)
+        assert requests[-1][0] == "sendRichMessage"
+    finally:
+        await n.stop()
+
+
+def test_widget_escapes_untrusted_values_and_includes_complete_status():
+    from app.telegram.widget import build_notification_widget
+    from app.telegram.format import html_to_plain
+    n = notifier()
+    for body in [n.render_opened(**entry()), n.render_modified(symbol="XAUUSDm", breakeven=True),
+                 n.render_closed(symbol="XAUUSDm", close_cause="tp", tp_index=1),
+                 n.render_rejected(message="<script>alert(1)</script>"),
+                 n.render_attention(detail="<img src=x onerror=alert(1)>"), n.render_cmd_help("ru")]:
+        widget = build_notification_widget(body)
+        assert widget and "LV COPYTRADER" in widget
+        assert "<script>" not in widget and "<img src=" not in widget
+        for token in ("XAUUSDm", "TP1", "ОШИБКА"):
+            if token in html_to_plain(body):
+                assert token in widget
+    assert "&lt;script&gt;" in build_notification_widget(n.render_rejected(message="<script>alert(1)</script>"))
 
 
 async def _config():
@@ -192,3 +236,65 @@ async def test_failed_be_is_not_reported_as_protected(data_dir):
     assert [a[0] for a, kw in sent] == ["rejected", "closed"]
     assert "SL сохранён" in sent[-1][0][1] and "в б/у" not in sent[-1][0][1]
     assert broker.positions[second]["sl"] == 2370
+
+
+@pytest.mark.parametrize('event', ['opened', 'modified', 'closed', 'rejected', 'attention'])
+async def test_each_notification_type_sends_one_widget_without_duplicate_caption(event):
+    n = notifier(); requests = []
+    def handler(request):
+        requests.append((request.url.path.rsplit('/', 1)[-1], json.loads(request.content)))
+        return httpx.Response(200, json={'ok': True, 'result': {'message_id': 1}})
+    n._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n._load_config = _config; n._record = _record
+    bodies = {
+        'opened': n.render_opened(**entry()),
+        'modified': n.render_modified(symbol='XAUUSDm', breakeven=True),
+        'closed': n.render_closed(symbol='XAUUSDm', close_cause='tp', tp_index=1),
+        'rejected': n.render_rejected(symbol='XAUUSDm', message='Rejected'),
+        'attention': n.render_attention(detail='Check connection'),
+    }
+    try:
+        assert await n.send(event, bodies[event])
+        assert len(requests) == 1 and requests[0][0] == 'sendWidget'
+        assert 'caption' not in requests[0][1]
+        assert '<script' not in requests[0][1]['html'].lower()
+    finally:
+        await n.stop()
+
+
+async def test_explicit_widget_rejection_falls_back_to_rich():
+    n = notifier(); requests = []
+    def handler(request):
+        requests.append(request.url.path.rsplit('/', 1)[-1])
+        return httpx.Response(400, json={'ok': False, 'description': 'Bad Request: widgets not supported in this chat'}) if len(requests) == 1 else httpx.Response(200, json={'ok': True, 'result': {'message_id': 1}})
+    n._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n._load_config = _config; n._record = _record
+    try:
+        assert await n.send('attention', n.render_attention(detail='Test'))
+        assert requests == ['sendWidget', 'sendRichMessage']
+    finally:
+        await n.stop()
+
+
+async def test_ambiguous_widget_timeout_does_not_fall_back_to_another_format(monkeypatch):
+    n = notifier(); methods = []
+    monkeypatch.setattr(n._settings, 'NOTIFY_RETRY_DELAYS', ())
+    def handler(request):
+        methods.append(request.url.path.rsplit('/', 1)[-1])
+        raise httpx.ReadTimeout('test timeout', request=request)
+    n._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n._load_config = _config; n._record = _record
+    try:
+        assert not await n.send('attention', n.render_attention(detail='Connection lost'))
+        assert methods == ['sendWidget']
+    finally:
+        await n.stop()
+
+
+def test_widget_preserves_safe_signal_link_and_rejects_unsafe_links():
+    from app.telegram.widget import build_notification_widget
+    body = '<b>Event</b>\n<a href="https://t.me/c/123/456">Signal post</a>'
+    widget = build_notification_widget(body)
+    assert 'href="https://t.me/c/123/456"' in widget
+    assert build_notification_widget('<b>Event</b>\n<a href="javascript:alert(1)">bad</a>') is None
+    assert build_notification_widget('<b>Event</b>\n<a href="https://u:p@example.org/">bad</a>') is None

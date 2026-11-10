@@ -586,3 +586,19 @@ async def test_general_settings_round_trip_orders_filter_and_prompt(
     assert general["use_fixed_order_lots"] is False
     assert general["max_entry_drift_usd"] == 5
     assert general["be_after_tp1"] is True
+
+
+async def test_codex_provider_settings_and_probe_are_available(client, monkeypatch):
+    from app.ai.codex_provider import CodexProvider
+    async def fake_verify(self):
+        return None
+    monkeypatch.setattr(CodexProvider, '_verify', fake_verify)
+    tested = await client.post('/api/provider/test', json={'kind': 'codex', 'base_url': '', 'extra_headers': {}})
+    assert tested.status_code == 200, tested.text
+    assert tested.json()['models'][0]['id'] == 'gpt-6.1-terra'
+    saved = await client.put('/api/settings/provider', json={'kind': 'codex', 'base_url': '', 'model': 'gpt-6.1-terra', 'extra_headers': {}, 'max_tokens': 1024})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['provider']['kind'] == 'codex'
+    probed = await client.post('/api/provider/probe', json={'kind': 'codex', 'base_url': '', 'model': 'gpt-6.1-terra'})
+    assert probed.status_code == 200, probed.text
+    assert probed.json()['supports_tools'] is True

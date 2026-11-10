@@ -19,6 +19,7 @@ COMMANDS={
 ICONS={
  'search':'<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/>',
  'arrow':'<path d="M4 12h15m-6-6 6 6-6 6"/>',
+ 'chevron':'<path d="m7 10 5 5 5-5"/>',
  'external':'<path d="M14 4h6v6m0-6-10 10M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/>',
  'copy':'<rect x="8" y="8" width="12" height="12" rx="3"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>',
  'check':'<path d="m5 12 4 4L19 6"/>',
@@ -38,7 +39,11 @@ def make_assets(destination):
         if p.is_file():
             target=destination/'assets'/p.relative_to(ROOT/'assets');target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,target)
     for name in ('site.css','app.js','start.js'):
-        data=(ROOT/name).read_bytes();file=name.rsplit('.',1);hashed=file[0]+'-'+hashlib.sha256(data).hexdigest()[:12]+'.'+file[1]
+        data=(ROOT/name).read_bytes()
+        if name=='site.css':
+            # The application is the single source of truth for theme colors and typography.
+            data=(REPO/'frontend/src/styles/tokens.css').read_bytes()+b'\n'+data
+        file=name.rsplit('.',1);hashed=file[0]+'-'+hashlib.sha256(data).hexdigest()[:12]+'.'+file[1]
         (destination/'assets'/hashed).write_bytes(data);result[name]='/assets/'+hashed
     brand=REPO/'frontend/public/assets/brand/mark.svg'
     shutil.copy2(brand,destination/'assets/mark.svg')
@@ -54,13 +59,13 @@ def render(locale,assets,version,page=None):
     path=f'/{locale}/'+(slug+'/' if slug else '')
     title=(page['title'][locale]+' · ' if page else '')+'LV Copytrader '+t('documentation')
     description=page['description'][locale] if page else t('intro')
-    langs=''.join(f'<option value="{x}" {"selected" if x==locale else ""}>{label}</option>' for x,label in [('en','EN'),('ru','RU'),('uz','UZ')])
+    langs=''.join(f'<a href="/{x}/{slug+"/" if slug else ""}" hreflang="{x}" lang="{x}" data-language="{x}" {"aria-current=page" if x==locale else ""}><span>{label}</span>{icon("check") if x==locale else ""}</a>' for x,label in [('en','English'),('ru','Русский'),('uz','O‘zbekcha')])
     config=json.dumps({'locale':locale,'slug':slug,'ui':{key:value[locale] for key,value in UI.items()},'commands':COMMANDS},ensure_ascii=False).replace('<','\\u003c')
     alternate=''.join(f'<link rel="alternate" hreflang="{x}" href="https://docs.lvenc.site/{x}/{slug+"/" if slug else ""}">' for x in LOCALES)
     nav=f'''<a class="skip" href="#main">{t('skip')}</a><header class="header"><div class="header-inner">
     <a class="brand" href="/{locale}/" aria-label="LV Copytrader">{brand()}</a><span class="brand-divider"></span><a class="docs-label" href="/{locale}/getting-started/">{t('documentation')}</a>
     <div class="header-actions"><button class="search-trigger" data-search>{icon('search')}<span class="search-label">{t('search')}</span><kbd data-shortcut>⌘ K</kbd></button>
-    <select id="language" aria-label="{t('language')}">{langs}</select><button class="icon-button" id="theme" aria-label="{t('theme')}">{icon('sun')}</button>
+    <details class="language" id="language"><summary aria-label="{t('language')}"><span>{locale.upper()}</span>{icon("chevron")}</summary><div class="language-menu">{langs}</div></details><button class="icon-button" id="theme" aria-label="{t('theme')}">{icon('sun')}</button>
     <a class="header-github" href="https://github.com/abdulloh5007/lv-copytrader-public" target="_blank" rel="noopener noreferrer" aria-label="GitHub"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.08c-3.12.68-3.78-1.33-3.78-1.33-.51-1.29-1.25-1.63-1.25-1.63-1.02-.7.08-.68.08-.68 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.62 1.22 3.26.94.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.54 0-1.22.44-2.22 1.15-3-.12-.28-.5-1.42.11-2.95 0 0 .94-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.14-1.45 3.08-1.15 3.08-1.15.61 1.53.23 2.67.11 2.95.72.78 1.15 1.78 1.15 3 0 4.3-2.64 5.26-5.15 5.54.4.35.76 1.03.76 2.08v3.14c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg></a></div></div></header>'''
     if not page:
         tabs=''.join(f'<button id="os-{os}" class="os-tab {"active" if os=="linux" else ""}" data-os="{os}" role="tab" tabindex="{0 if os=="linux" else -1}" aria-selected="{"true" if os=="linux" else "false"}" aria-controls="install-panel" {"aria-describedby=platform-note" if os=="macos" else ""}><img src="/assets/os/{os}.svg" width="20" height="20" alt=""><span>{label}</span>{"<span class=beta-badge>"+t("beta")+"</span>" if os=="macos" else ""}</button>' for os,label in [('windows','Windows'),('macos','macOS'),('linux','Linux')])
@@ -89,7 +94,10 @@ def render(locale,assets,version,page=None):
         prev=PAGES[index-1] if index else None;next_page=PAGES[index+1] if index+1<len(PAGES) else None
         pages=''
         for label,item in [('previous',prev),('next',next_page)]:
-            if item:pages+=f'<a class="page-nav-{label}" href="/{locale}/{item["slug"]}/"><small>{t(label)}</small>{item["title"][locale]} {icon("arrow")}</a>'
+            if item:
+                text=f'<span class="page-nav-text"><small>{t(label)}</small><span>{item["title"][locale]}</span></span>'
+                arrow=f'<span class="page-nav-arrow">{icon("arrow")}</span>'
+                pages+=f'<a class="page-nav-{label}" href="/{locale}/{item["slug"]}/">{arrow+text if label=="previous" else text+arrow}</a>'
         body=f'''<div class="mobile-docs"><button id="menu" aria-expanded="false" aria-controls="sidebar">{icon('menu')}{t('documentation')}</button><span>{page['title'][locale]}</span></div>
         <div class="docs-grid"><aside class="sidebar" id="sidebar"><a class="sidebar-install" href="/{locale}/">{icon('arrow')}{t('install')}</a>{links}<a class="sidebar-bottom" href="https://github.com/abdulloh5007/lv-copytrader-public" target="_blank" rel="noopener noreferrer">{t('github')}{icon('external')}</a></aside>
         <main id="main" class="article"><div class="article-kicker">{t('reading')} <span>/</span> LVCT {E(version)}</div><h1>{page['title'][locale]}</h1><p class="article-description">{page['description'][locale]}</p><div class="article-rule"></div>{sections}<nav class="page-navigation" aria-label="Pagination">{pages}</nav></main><aside class="toc"><span>{t('onpage')}</span>{toc}</aside></div>'''

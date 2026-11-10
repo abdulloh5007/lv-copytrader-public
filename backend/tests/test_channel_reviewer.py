@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.ai.base import Capabilities, DoneDelta, TextDelta
 from app.ai.loop import _concurrent_run_limit, run_slots
@@ -137,7 +137,7 @@ class _Scripted:
         self.calls: list[dict[str, Any]] = []
 
     def run(self, *, system: str, messages: list[dict[str, Any]], tools: list[Any], max_tokens: int, model: str, capabilities: Capabilities) -> Any:
-        self.calls.append({"system": system, "tools": list(tools), "model": model, "max_tokens": max_tokens})
+        self.calls.append({"system": system, "messages": messages, "tools": list(tools), "model": model, "max_tokens": max_tokens})
 
         async def _stream() -> Any:
             yield TextDelta(text=self.text)
@@ -158,7 +158,8 @@ async def test_classify_signal_sends_the_brief() -> None:
     )
     assert verdict == "no"
     assert provider.calls[0]["tools"] == []
-    assert "bare target-hit" in provider.calls[0]["system"]
+    assert "bare target-hit" not in provider.calls[0]["system"]
+    assert "bare target-hit" in str(provider.calls[0]["messages"])
     assert provider.calls[0]["model"] == "zenmux-model"
 
 
@@ -529,3 +530,175 @@ def test_copytrader_loader_has_no_backup_api() -> None:
     assert not hasattr(brief, "backup_current")
     assert not hasattr(brief, "read_meta")
     assert not hasattr(brief, "read_backup")
+
+
+async def test_reviewer_periodically_replaces_only_changed_playbook(data_dir: Path, monkeypatch: Any) -> None:
+    await init_db()
+    await _enable_reviewer()
+    monkeypatch.setattr(reviewer_worker, 'REFRESH_INTERVAL_SECONDS', 0.05)
+    chat_id = -100717
+    source_id = await _seed(chat_id, [f'BUY {4300 + n}' for n in range(12)], span_days=3)
+    provider = _Provider()
+    provider.push(_playbook('INITIAL'))
+    provider.push(_playbook('REFRESHED'))
+    reviewer = ChannelReviewer(_Runtime(provider, _Telegram([])))  # type: ignore[arg-type]
+    try:
+        await reviewer.start()
+        for _ in range(100):
+            if await _ready(data_dir, 'INITIAL'):
+                break
+            await asyncio.sleep(0.02)
+        assert await _ready(data_dir, 'INITIAL')
+        await asyncio.sleep(0.2)
+        assert provider.calls == 1  # No charge or rewrite for an unchanged sample.
+        async with session_scope() as session:
+            now = datetime.now(UTC).replace(tzinfo=None)
+            session.add(Message(source_id=source_id, message_id=9999, edit_date=0,
+                                kind='text', status='processed', text='New format',
+                                posted_at=now, received_at=now))
+        for _ in range(100):
+            if await _ready(data_dir, 'REFRESHED'):
+                break
+            await asyncio.sleep(0.02)
+        loaded = load_active_brief(data_dir)
+        assert 'REFRESHED' in loaded and 'INITIAL' not in loaded
+        assert provider.calls == 2
+        assert len(loaded.splitlines()) <= 60
+        assert not list((data_dir / 'channel-briefs' / 'backups').glob('*'))
+    finally:
+        await reviewer.stop()
+
+
+async def test_refresh_failure_preserves_usable_profile(data_dir: Path) -> None:
+    await init_db()
+    await _enable_reviewer()
+    chat_id = -100718
+    source_id = await _seed(chat_id, [f'BUY {4300 + n}' for n in range(12)], span_days=3)
+    provider = _Provider()
+    provider.push(_playbook('STILL-USABLE'))
+    reviewer = ChannelReviewer(_Runtime(provider, _Telegram([])))  # type: ignore[arg-type]
+    await reviewer._study(source_id, chat_id)
+    assert await _ready(data_dir, 'STILL-USABLE')
+    class Broken:
+        def run(self, **kwargs: Any) -> Any:
+            raise RuntimeError('provider offline')
+    reviewer.runtime._provider = Broken()
+    async with session_scope() as session:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        session.add(Message(source_id=source_id, message_id=9999, edit_date=0,
+                            kind='text', status='processed', text='Changed',
+                            posted_at=now, received_at=now))
+    await reviewer._study(source_id, chat_id, refresh=True)
+    assert await _ready(data_dir, 'STILL-USABLE')
+    assert (read_meta(data_dir) or {}).get('refresh_status') == 'failed'
+
+
+def test_playbook_is_bounded_even_when_one_line_is_huge() -> None:
+    assert len(clip_lines('x' * 50000, 60)) <= 12001
+
+
+def test_bounded_corpus_retains_latest_posts():
+    from app.reviewer.study import MAX_CORPUS_CHARS, render_corpus
+    rows = [{'message_id': n, 'text': 'x' * 400 + str(n), 'kind': 'text'} for n in range(180)]
+    corpus = render_corpus('channel', -100, rows)
+    assert len(corpus) <= MAX_CORPUS_CHARS
+    assert '#179 text' in corpus
+    assert '#0 text' not in corpus
+
+
+def test_source_marker_prevents_cross_channel_profile(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    write_ready(data, brief="right source", meta={"chat_id": -1001}, study={}, max_lines=60)
+    assert "right source" in load_active_brief(data, chat_id=-1001)
+    assert load_active_brief(data, chat_id=-1002) == ""
+    (active_brief_path(data).parent / "source.json").unlink()
+    assert load_active_brief(data, chat_id=-1001) == ""
+
+
+async def test_trading_agent_receives_only_matching_profile_as_user_data(data_dir: Path, monkeypatch: Any) -> None:
+    from app.ai.loop import _AgentRun
+    await init_db()
+    write_ready(data_dir, brief='zone format marker', meta={'chat_id': -1007}, study={}, max_lines=60)
+    async def fake_context(session: Any, runtime: Any, row: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return [{'role': 'user', 'content': [{'type': 'text', 'text': 'signal'}]}], {}
+    monkeypatch.setattr('app.ai.loop.prompts.build_context', fake_context)
+    runtime = _Runtime(_Provider(), _Telegram([]))
+    run = _AgentRun(runtime, run_id='test', message_row_id=1, kind='signal', instruction=None)  # type: ignore[arg-type]
+    run.source_chat_id = -1007
+    row = type('Row', (), {'text': 'signal', 'image_count': 0})()
+    assert await run._build_messages(row) is None
+    assert run.messages[0]['role'] == 'user'
+    assert 'zone format marker' in str(run.messages[0]['content'])
+    assert 'UNTRUSTED DATA' in str(run.messages[0]['content'])
+    run.source_chat_id = -1008
+    assert await run._build_messages(row) is None
+    assert 'zone format marker' not in str(run.messages[0]['content'])
+
+
+async def test_timer_retries_initial_study_after_attempt_cap(data_dir: Path) -> None:
+    from app.reviewer.archive import write_meta
+    await init_db()
+    await _enable_reviewer()
+    chat_id = -100719
+    source_id = await _seed(chat_id, [f'BUY {4300 + n}' for n in range(12)], span_days=3)
+    write_meta(data_dir, {'chat_id': chat_id, 'source_id': source_id,
+                          'status': 'failed', 'attempts': 3})
+    provider = _Provider()
+    provider.push(_playbook('RECOVERED'))
+    reviewer = ChannelReviewer(_Runtime(provider, _Telegram([])))  # type: ignore[arg-type]
+    await reviewer._queue_refresh()
+    assert reviewer._job == (source_id, chat_id, False)
+    await reviewer._study(source_id, chat_id)
+    assert await _ready(data_dir, 'RECOVERED')
+    assert (read_meta(data_dir) or {}).get('attempts') == 0
+
+
+async def test_partial_model_stream_does_not_replace_ready_profile(data_dir: Path) -> None:
+    await init_db()
+    await _enable_reviewer()
+    chat_id = -100720
+    source_id = await _seed(chat_id, [f'BUY {4300 + n}' for n in range(12)], span_days=3)
+    provider = _Provider()
+    provider.push(_playbook('STABLE'))
+    reviewer = ChannelReviewer(_Runtime(provider, _Telegram([])))  # type: ignore[arg-type]
+    await reviewer._study(source_id, chat_id)
+    class Partial:
+        def run(self, **kwargs: Any) -> Any:
+            async def stream() -> Any:
+                yield TextDelta(text='PARTIAL UNSAFE RESPONSE')
+            return stream()
+    reviewer.runtime._provider = Partial()
+    async with session_scope() as session:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        session.add(Message(source_id=source_id, message_id=9999, edit_date=0,
+                            kind='text', status='processed', text='Changed',
+                            posted_at=now, received_at=now))
+    await reviewer._study(source_id, chat_id, refresh=True)
+    assert await _ready(data_dir, 'STABLE')
+    assert 'PARTIAL' not in load_active_brief(data_dir)
+
+
+async def test_sample_uses_latest_edit_instead_of_old_revision(data_dir: Path) -> None:
+    from app.reviewer.study import load_db_messages
+    await init_db()
+    source_id = await _seed(-100721, ['old wording'], span_days=0)
+    async with session_scope() as session:
+        source_messages = (await session.execute(
+            select(Message).where(Message.source_id == source_id)
+        )).scalars().all()
+        original = source_messages[0]
+        session.add(Message(source_id=source_id, message_id=original.message_id,
+                            revision=2, edit_date=123, kind='text', status='processed',
+                            text='new wording', posted_at=original.posted_at,
+                            received_at=original.received_at))
+    rows = await load_db_messages(source_id)
+    assert len(rows) == 1
+    assert rows[0]['text'] == 'new wording'
+
+
+def test_refresh_prefers_fresh_telegram_edit():
+    from app.reviewer.study import merge_corpus
+    stored = {'message_id': 1, 'text': 'old edit', 'origin': 'db'}
+    fresh = {'message_id': 1, 'text': 'new edit', 'origin': 'telegram'}
+    assert merge_corpus([stored], [fresh])[0]['text'] == 'old edit'
+    assert merge_corpus([stored], [fresh], prefer_telegram=True)[0]['text'] == 'new edit'

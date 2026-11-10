@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import events
 from app.config import settings
-from app.db import session_scope
+from app.db import get_setting, session_scope
 from app.models import Message, MessageImage, Source
 from app.operator_settings import SKIP_REASON_TAG, tag_filter_drops
 from app.telegram.classify import classify, kind_is_processable, skip_reason
@@ -403,6 +403,8 @@ class Ingestor:
         """Body of :meth:`handle_deleted`, always called under the ingest lock."""
         refs: list[str] = []
         source_id = 0
+        guarded_source = False
+        guarded_signal = False
         try:
             async with session_scope() as session:
                 source = await self._active_source(session)
@@ -410,6 +412,8 @@ class Ingestor:
                     log.info("delete_no_active_source ids=%s", message_ids)
                     return
                 source_id = int(source.id)
+                marker = await get_setting(session, "ingest.research_only_chat_id", None)
+                guarded_source = bool(marker) and str(source.chat_id) == str(marker)
                 result = await session.execute(
                     select(Message).where(
                         Message.source_id == source_id,
@@ -424,14 +428,20 @@ class Ingestor:
                     return
                 now = _utcnow()
                 seen_roots: set[int] = set()
+                from app.ai.uz_gold_zone import entry_identity
                 for row in rows:
+                    if guarded_source and entry_identity(row.text) is not None:
+                        guarded_signal = True
                     if row.deleted_at is None:
                         row.deleted_at = now
                     root = await guards.root_message_id(session, source_id, int(row.message_id))
                     if root in seen_roots:
                         continue
                     seen_roots.add(root)
-                    refs.append(f"SIG:{source_id}:{root}")
+                    ref = f"SIG:{source_id}:{root}"
+                    refs.append(ref)
+                    if guarded_source and await guards.live_chain_trades(session, ref):
+                        guarded_signal = True
         except Exception as exc:  # noqa: BLE001 - a delete must not raise into Telethon
             log.exception("delete_mark_failed ids=%s error=%s", message_ids, exc)
             self.runtime.bus.emit(
@@ -440,6 +450,17 @@ class Ingestor:
                 message_ids=message_ids,
                 message=str(exc)[:MAX_ERROR_CHARS],
             )
+            return
+        if guarded_source:
+            if guarded_signal:
+                await self.runtime.set_armed(False)
+                detail = "A channel signal was deleted; trading was disabled. Check any open positions; none were closed automatically."
+                self.runtime.bus.emit(events.SYSTEM_WARNING, reason="channel_signal_deleted", message=detail)
+                notifier = getattr(self.runtime, "notifier", None)
+                if notifier is not None:
+                    text = notifier.render_attention(subject="channel signal deleted", detail=detail)
+                    notifier.fire("attention", text or detail)
+            log.info("guarded_channel_delete source_id=%s signal=%s", source_id, guarded_signal)
             return
         for ref in refs:
             await self._flatten(
@@ -724,6 +745,11 @@ class Ingestor:
             if message_id > source_last_message_id:
                 source.last_message_id = message_id
 
+        if edited and not catchup:
+            await self._guard_corrected_channel_signal(
+                source_id=source_id, chat_id=source_chat_id, message_id=message_id, row_id=row_id
+            )
+
         if full_close:
             parent_ref = f"SIG:{source_id}:{reply_to_message_id}"
             snapshot["images"] = []
@@ -787,6 +813,45 @@ class Ingestor:
             bool(edited),
         )
         return row_id
+
+    async def _guard_corrected_channel_signal(
+        self, *, source_id: int, chat_id: int, message_id: int, row_id: int
+    ) -> None:
+        """Disarm on a material edit before any queued agent can open another leg."""
+        from app.ai.xauuad_template import CHANNEL_CHAT_ID, parse_channel_post
+        from app.ai.uz_gold_zone import entry_identity
+        async with session_scope() as session:
+            research_chat = await get_setting(session, "ingest.research_only_chat_id", None)
+            if chat_id != CHANNEL_CHAT_ID and str(chat_id) != str(research_chat):
+                return
+            current = await session.get(Message, row_id)
+            previous = (await session.execute(
+                select(Message).where(Message.source_id == source_id,
+                                      Message.message_id == message_id, Message.id != row_id)
+                .order_by(Message.revision.desc(), Message.id.desc()).limit(1)
+            )).scalars().first()
+            if current is None or previous is None:
+                return
+            if chat_id == CHANNEL_CHAT_ID:
+                before, after = parse_channel_post(previous.text), parse_channel_post(current.text)
+                old_id = (before.side, before.zone) if before.kind in {"entry", "complete"} else None
+                new_id = (after.side, after.zone) if after.kind in {"entry", "complete"} else None
+            else:
+                old_id, new_id = entry_identity(previous.text), entry_identity(current.text)
+        if old_id is None or new_id is None or old_id == new_id:
+            return
+        await self.runtime.set_armed(False)
+        detail = (f"Signal {message_id} was edited from {old_id} to "
+                  f"{new_id}. Automatic trading was disabled. "
+                  "Check existing positions; no position was closed or reversed automatically.")
+        self.runtime.bus.emit(events.SYSTEM_WARNING, reason="channel_signal_corrected",
+                              message_id=message_id, message=detail)
+        notifier = getattr(self.runtime, "notifier", None)
+        if notifier is not None:
+            text = notifier.render_attention(subject="channel signal corrected", detail=detail)
+            notifier.fire("attention", text or detail)
+        log.warning("channel_signal_corrected message_id=%s old_side=%s new_side=%s trading_disarmed=true",
+                    message_id, old_id[0], new_id[0])
 
     @staticmethod
     def _deferred_to_album(message: Any, *, album: list | None, catchup: bool, edited: bool) -> bool:

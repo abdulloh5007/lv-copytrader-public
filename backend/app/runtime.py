@@ -36,7 +36,7 @@ log = get_logger(__name__)
 STATUS_KEYS: tuple[str, ...] = ("mt5", "telegram", "provider")
 
 #: Provider kinds that can be built from settings.
-PROVIDER_KINDS: frozenset[str] = frozenset({"anthropic", "openai"})
+PROVIDER_KINDS: frozenset[str] = frozenset({"anthropic", "openai", "codex"})
 
 
 def _default_status() -> dict[str, Any]:

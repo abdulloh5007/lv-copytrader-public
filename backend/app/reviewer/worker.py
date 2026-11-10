@@ -1,7 +1,7 @@
 """The channel reviewer: one background task, separate from the three signal workers.
 
-It studies the active Telegram source once. A later message does not start another
-study. Changing the source backs up the previous playbook and starts a fresh one.
+It studies the active Telegram source and periodically refreshes its bounded playbook
+when the message sample changes. Changing source backs up the prior playbook.
 The task never acquires the agent-run semaphore, so a long study cannot hold up a
 free copytrader slot.
 """
@@ -9,6 +9,7 @@ free copytrader slot.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,7 @@ from app.reviewer.archive import (
     brief_ready_for,
     write_meta,
     write_ready,
+    read_meta,
 )
 from app.reviewer.study import (
     DEFAULT_MIN_MESSAGES,
@@ -49,9 +51,11 @@ log = get_logger(__name__)
 TASK_NAME: str = "channel_reviewer"
 SETTINGS_TASK: str = "channel_reviewer_settings"
 
-#: A study that keeps failing stops until the channel changes. Waiting for a
-#: provider or for Telegram is not a failure and does not spend an attempt.
+#: Immediate attempts are bounded. The periodic timer retries a failed initial study
+#: at a controlled interval, without blocking signal workers.
 MAX_STUDY_ATTEMPTS: int = 3
+#: One periodic check every 15 minutes, independent of signal workers.
+REFRESH_INTERVAL_SECONDS: float = 900.0
 
 
 def _utcnow() -> datetime:
@@ -59,13 +63,13 @@ def _utcnow() -> datetime:
 
 
 class ChannelReviewer:
-    """Owns the one-shot study loop for whichever source is active."""
+    """Owns the periodic study loop for whichever source is active."""
 
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
         self._lock: asyncio.Lock = asyncio.Lock()
         self._wake: asyncio.Event = asyncio.Event()
-        self._job: tuple[int, int] | None = None
+        self._job: tuple[int, int, bool] | None = None
         self._stopping: bool = False
         self._task: asyncio.Task[None] | None = None
         self._settings_task: asyncio.Task[None] | None = None
@@ -145,8 +149,8 @@ class ChannelReviewer:
         """Back up the previous channel when the binding changed, then study once.
 
         Selecting the same chat again does nothing once its brief is ready. A failed
-        study is not retried forever: after ``MAX_STUDY_ATTEMPTS`` only a new chat
-        starts again. There is no timer.
+        immediate retries stop at ``MAX_STUDY_ATTEMPTS``. The periodic timer
+        can retry later without interrupting the signal workers.
         """
         if not await self._enabled():
             async with self._lock:
@@ -174,14 +178,17 @@ class ChannelReviewer:
             if attempts_for(data_dir, chat_id) >= MAX_STUDY_ATTEMPTS:
                 log.info("channel_brief_gave_up chat_id=%s attempts=%d", chat_id, MAX_STUDY_ATTEMPTS)
                 return
-            self._job = (source_id, chat_id)
+            self._job = (source_id, chat_id, False)
             self._wake.set()
             log.info("channel_study_queued source_id=%s chat_id=%s", source_id, chat_id)
 
     async def _loop(self) -> None:
         try:
             while not self._stopping:
-                await self._wake.wait()
+                try:
+                    await asyncio.wait_for(self._wake.wait(), timeout=REFRESH_INTERVAL_SECONDS)
+                except asyncio.TimeoutError:
+                    await self._queue_refresh()
                 if self._stopping:
                     return
                 async with self._lock:
@@ -191,13 +198,29 @@ class ChannelReviewer:
                 if job is None:
                     continue
                 try:
-                    await self._study(job[0], job[1])
+                    await self._study(job[0], job[1], refresh=job[2])
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001 - one bad study must not kill the task
                     log.exception("channel_reviewer_failed source_id=%s chat_id=%s", job[0], job[1])
         except asyncio.CancelledError:
             raise
+
+    async def _queue_refresh(self) -> None:
+        """Queue the active source without overriding a pending source-change job."""
+        if not await self._enabled():
+            return
+        binding = await self._active_binding()
+        if binding is None:
+            return
+        source_id, chat_id = binding
+        ready = brief_ready_for(self._data_dir(), chat_id)
+        async with self._lock:
+            if self._job is None:
+                # A failed initial study may be retried once per interval even if
+                # its immediate attempts were exhausted. Source switching still wins.
+                self._job = (source_id, chat_id, ready)
+                self._wake.set()
 
     async def _watch_settings(self) -> None:
         """When the provider is saved, finish a study that was waiting on it.
@@ -234,12 +257,12 @@ class ChannelReviewer:
         finally:
             self.runtime.bus.unsubscribe(queue)
 
-    async def _study(self, source_id: int, chat_id: int) -> None:
+    async def _study(self, source_id: int, chat_id: int, *, refresh: bool = False) -> None:
         if not await self._enabled():
             log.info("channel_study_skipped chat_id=%s reason=disabled", chat_id)
             return
         data_dir = self._data_dir()
-        if brief_ready_for(data_dir, chat_id):
+        if not refresh and brief_ready_for(data_dir, chat_id):
             return
         if not await self._still_current(chat_id):
             log.info("channel_study_discarded chat_id=%s reason=source_changed", chat_id)
@@ -247,7 +270,8 @@ class ChannelReviewer:
 
         rows = await load_db_messages(source_id)
         origin = "db"
-        if corpus_is_thin(rows, min_messages=self._min_messages()):
+        thin = corpus_is_thin(rows, min_messages=self._min_messages())
+        if refresh or thin:
             fetched = await self._telegram_recent(chat_id)
             if fetched is None:
                 await self._write_status(
@@ -259,7 +283,7 @@ class ChannelReviewer:
                 return
             extra = [view for view in (telegram_message_view(item) for item in fetched) if view]
             if extra:
-                rows = merge_corpus(rows, extra)
+                rows = merge_corpus(rows, extra, prefer_telegram=refresh)
                 origin = "db+telegram"
             elif not rows:
                 await self._write_status(
@@ -287,6 +311,11 @@ class ChannelReviewer:
         described = await load_source(source_id)
         title = described[0] if described is not None else ""
         corpus = render_corpus(title, chat_id, rows)
+        corpus_hash = hashlib.sha256(corpus.encode("utf-8")).hexdigest()
+        previous_meta = read_meta(data_dir) or {}
+        if refresh and brief_ready_for(data_dir, chat_id) and previous_meta.get("corpus_hash") == corpus_hash:
+            log.info("channel_study_unchanged chat_id=%s", chat_id)
+            return
         try:
             brief = await compose_brief(
                 provider,
@@ -331,11 +360,12 @@ class ChannelReviewer:
                     "chat_id": int(chat_id),
                     "source_id": int(source_id),
                     "status": "ready",
-                    "attempts": attempts_for(data_dir, chat_id),
+                    "attempts": 0,
                     "studied_at": _utcnow().isoformat(),
                     "origin": origin,
                     "message_count": len(rows),
                     "model": model,
+                    "corpus_hash": corpus_hash,
                 },
                 study=study_artifact(rows, origin=origin),
                 max_lines=self._max_lines(),
@@ -360,6 +390,14 @@ class ChannelReviewer:
         data_dir = self._data_dir()
         async with self._lock:
             if not await self._still_current(chat_id):
+                return
+            # A failed refresh must not replace a usable ready profile or clear its
+            # source identity. The next periodic check can retry it.
+            if brief_ready_for(data_dir, chat_id):
+                current = read_meta(data_dir) or {}
+                current.update({"refresh_status": status, "refresh_error": error[:500],
+                                "refresh_checked_at": _utcnow().isoformat()})
+                write_meta(data_dir, current)
                 return
             attempts = attempts_for(data_dir, chat_id)
             if bump_attempt:

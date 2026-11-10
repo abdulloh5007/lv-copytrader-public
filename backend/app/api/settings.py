@@ -989,9 +989,8 @@ async def put_provider_settings(
     client keyed by kind, base URL, key, model and headers, and an agent run that started
     before this write would otherwise keep talking to the old endpoint with the old key.
 
-    There is no OAuth here and there never will be: consumer Claude and ChatGPT
-    subscriptions have no public API, so the only credentials this accepts are an API key or
-    any OpenAI-compatible base URL (BUILD §4.4).
+    The Codex provider uses a separately authenticated local app-server; this
+    endpoint does not accept or return its ChatGPT session credentials.
     """
     try:
         written = [

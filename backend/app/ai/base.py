@@ -44,6 +44,7 @@ _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 _DEFAULT_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
     "openai": "https://api.openai.com",
+    "codex": "",
 }
 
 
@@ -259,7 +260,7 @@ def build_provider(
     normalized_kind = (kind or "").strip().lower()
     if normalized_kind not in _DEFAULT_BASE_URLS:
         raise ConfigError(
-            f"unknown provider kind {kind!r} — expected 'anthropic' or 'openai'",
+            f"unknown provider kind {kind!r} — expected 'anthropic', 'openai' or 'codex'",
             detail={"kind": kind},
         )
     url = normalize_base_url(base_url, default=_DEFAULT_BASE_URLS[normalized_kind])
@@ -268,6 +269,13 @@ def build_provider(
         for name, value in (extra_headers or {}).items()
         if value is not None and str(name).strip()
     }
+    if normalized_kind == "codex":
+        from pathlib import Path
+        from app.ai.codex_provider import CodexProvider
+        from app.config import settings
+
+        return CodexProvider(Path(settings.DATA_DIR) / "lvct-codex" / "session" / "ws-token")
+
     if normalized_kind == "anthropic":
         from app.ai.anthropic_provider import AnthropicProvider
 

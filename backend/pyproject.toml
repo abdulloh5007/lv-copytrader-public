@@ -27,6 +27,7 @@ dependencies = [
     "pydantic-settings",
     "telethon",
     "httpx",
+    "websockets>=14",
     "cryptography",
     "pillow",
     "anthropic>=1.0",

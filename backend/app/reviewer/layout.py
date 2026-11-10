@@ -1,6 +1,6 @@
 """Directory names for the channel brief. No I/O.
 
-Copytrader code may open ``active/brief.md`` and nothing under ``reviewer/`` or
+Copytrader code may open the active brief and its source marker, and nothing under ``reviewer/`` or
 ``backups/``. The names live here so the loader and the archive cannot drift apart.
 """
 
@@ -12,6 +12,7 @@ REVIEWER_DIR: str = "reviewer"
 BACKUP_DIR: str = "backups"
 CURRENT_DIR: str = "current"
 BRIEF_FILE: str = "brief.md"
+IDENTITY_FILE: str = "source.json"
 META_FILE: str = "meta.json"
 STUDY_FILE: str = "study.json"
 

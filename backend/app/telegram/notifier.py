@@ -18,10 +18,10 @@ Five properties this file exists to guarantee:
   not bind anyone else and :meth:`Notifier.send` will not deliver anywhere else. Without
   that, a bot username that is shared or guessed is enough for a stranger to be handed
   every symbol, volume, entry, stop and realised P/L the account produces.
-* **The operator talks to the bot with slash commands, never sticky buttons.** On start
+* **The operator talks to the bot using commands and a private read-only menu.** On start
   (and whenever the bot token is saved or rotated) we ``deleteMyCommands`` then
   ``setMyCommands`` so Telegram's command menu is LV Copytrader's ``/start``, ``/status``
-  and ``/help`` — not leftovers from a previous bot token. Incoming DMs are answered
+  plus read-only account, position, order and signal commands — not leftovers from a previous bot token. Incoming DMs are answered
   only for ``notifier.admin_ids`` / the bound chat. A background poller consumes
   ``getUpdates`` for those commands; ``detect_chat`` and ``recent_senders`` take the
   same lock for their whole window so the poller cannot steal the update they are
@@ -30,8 +30,8 @@ Five properties this file exists to guarantee:
   did. No ``ReplyKeyboardMarkup`` / ``InlineKeyboardMarkup`` is sent; every
   ``sendMessage`` includes ``ReplyKeyboardRemove`` so a leftover button row from
   another product is cleared the next time we write.
-* **Rich cards by default.** Notifications use ``sendRichMessage`` with rich HTML;
-  explicit unsupported-format refusals fall back to classic ``sendMessage`` HTML.
+* **Widget cards by default.** Private chats receive self-contained HTML widgets;
+  explicit unsupported-format refusals fall back to rich and then classic messages.
   Trade cards we build ourselves are already Telegram HTML. AI notes, attention
   text and slash-command replies that arrive as markdown (headings, bold, lists,
   tables) are converted: tables become aligned ``<pre>`` blocks, because Telegram
@@ -72,6 +72,7 @@ from app.telegram.format import (
     split_telegram_html,
     telegram_html_to_rich_html,
 )
+from app.telegram.widget import build_menu_widget, build_notification_widget
 from app.util.logging import get_logger, redact, register_secret
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only, no runtime import cycle
@@ -161,19 +162,19 @@ READ_TIMEOUT_SECONDS: Final[float] = 25.0
 
 #: Update kinds `detect_chat` listens for. A person pressing "start" produces `message`;
 #: adding the bot to a channel and posting produces `channel_post`.
-DETECT_ALLOWED_UPDATES: Final[tuple[str, ...]] = ("message", "channel_post")
+DETECT_ALLOWED_UPDATES: Final[tuple[str, ...]] = ("message", "channel_post", "callback_query", "widget_query")
 
 #: Slash commands registered with ``setMyCommands`` and answered by the inbound poller.
 #: Order is the order Telegram shows in the menu. Keep this set small and LV Copytrader-
 #: specific: a token that previously served another product may still have ``/plan``
 #: and friends in BotFather until we overwrite them.
-BOT_COMMAND_NAMES: Final[tuple[str, ...]] = ("start", "status", "help")
+BOT_COMMAND_NAMES: Final[tuple[str, ...]] = ("start", "menu", "status", "account", "positions", "orders", "signals", "help")
 ALLOWED_BOT_COMMANDS: Final[frozenset[str]] = frozenset(BOT_COMMAND_NAMES)
 
 #: Names this notifier must never re-register. They belonged to a different product
 #: that shared the token; they do nothing here.
 LEGACY_BOT_COMMANDS: Final[frozenset[str]] = frozenset(
-    {"plan", "apikeys", "autokey", "settings", "menu", "key", "keys"}
+    {"plan", "apikeys", "autokey", "settings", "key", "keys"}
 )
 
 #: Sent with every ``sendMessage`` so a leftover reply keyboard is cleared. This is
@@ -331,7 +332,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "cmd.start.allowlist_off": "Admin allowlist: off",
         "cmd.start.notify_on": "Notifications: on",
         "cmd.start.notify_off": "Notifications: off",
-        "cmd.start.hint": "Commands: /start /status /help",
+        "cmd.start.hint": "Open /menu or use /help for all commands.",
         "cmd.help.heading": "Commands",
         "cmd.status.heading": "Status",
         "cmd.status.mt5": "MT5",
@@ -343,8 +344,27 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "cmd.status.disarmed": "disarmed",
         "cmd.unknown": "Unknown command. Use /help.",
         "cmd.menu.start": "Bot and binding status",
+        "cmd.menu.menu": "Open the quick menu",
         "cmd.menu.status": "MT5 / Telegram / ARM summary",
         "cmd.menu.help": "List commands",
+        "cmd.menu.account": "Account balance and equity",
+        "cmd.menu.positions": "Open positions",
+        "cmd.menu.orders": "Pending orders",
+        "cmd.menu.signals": "Recent channel posts",
+        "cmd.account.heading": "Account",
+        "cmd.account.balance": "Balance",
+        "cmd.account.equity": "Equity",
+        "cmd.account.floating": "Floating P/L",
+        "cmd.account.free": "Free margin",
+        "cmd.positions.heading": "Open positions",
+        "cmd.orders.heading": "Pending orders",
+        "cmd.signals.heading": "Recent channel posts",
+        "cmd.list.empty": "None",
+        "cmd.list.more": "Showing {shown} of {total}",
+        "cmd.unavailable": "Data unavailable. Check the connection and try again.",
+        "cmd.trades": "Trades",
+        "cmd.external": "External",
+        "cmd.status.provider": "AI · last check",
     },
     "ru": {
         'title.cover': '✅ TP ПОКРЫТИЯ · 1R',
@@ -423,7 +443,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "cmd.start.allowlist_off": "Список админов: выключен",
         "cmd.start.notify_on": "Уведомления: включены",
         "cmd.start.notify_off": "Уведомления: выключены",
-        "cmd.start.hint": "Команды: /start /status /help",
+        "cmd.start.hint": "Быстрое меню: /menu · все команды: /help.",
         "cmd.help.heading": "Команды",
         "cmd.status.heading": "Статус",
         "cmd.status.mt5": "MT5",
@@ -435,8 +455,27 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "cmd.status.disarmed": "выключен",
         "cmd.unknown": "Неизвестная команда. Используйте /help.",
         "cmd.menu.start": "Статус бота и привязки",
+        "cmd.menu.menu": "Открыть быстрое меню",
         "cmd.menu.status": "Сводка MT5 / Telegram / ARM",
         "cmd.menu.help": "Список команд",
+        "cmd.menu.account": "Баланс и средства счёта",
+        "cmd.menu.positions": "Открытые позиции",
+        "cmd.menu.orders": "Отложенные ордера",
+        "cmd.menu.signals": "Последние сообщения канала",
+        "cmd.account.heading": "Счёт",
+        "cmd.account.balance": "Баланс",
+        "cmd.account.equity": "Средства",
+        "cmd.account.floating": "Текущий P/L",
+        "cmd.account.free": "Свободная маржа",
+        "cmd.positions.heading": "Открытые позиции",
+        "cmd.orders.heading": "Отложенные ордера",
+        "cmd.signals.heading": "Последние сообщения канала",
+        "cmd.list.empty": "Нет",
+        "cmd.list.more": "Показано {shown} из {total}",
+        "cmd.unavailable": "Данные недоступны. Проверьте подключение и повторите.",
+        "cmd.trades": "Сделки",
+        "cmd.external": "Внешняя",
+        "cmd.status.provider": "ИИ · последняя проверка",
     },
 }
 
@@ -862,7 +901,7 @@ def parse_bot_command(text: str) -> str | None:
 
 
 def bot_command_menu(locale: str = DEFAULT_LOCALE) -> list[dict[str, str]]:
-    """The ``setMyCommands`` payload: LV Copytrader's three commands, nothing else."""
+    """The ``setMyCommands`` payload of read-only LV Copytrader commands."""
     loc = normalize_locale(locale)
     return [
         {
@@ -1119,7 +1158,7 @@ class Notifier:
                     "disable_web_page_preview": True,
                     "reply_markup": dict(KEYBOARD_REMOVE),
                 }
-                ok, error = await self._send_with_retries(config.token, payload, plain, ntype, rich=True)
+                ok, error = await self._send_with_retries(config.token, payload, plain, ntype, rich=True, widget=True)
                 if not ok:
                     break
             await self._record(ntype, record, ok=ok, error=error)
@@ -1249,6 +1288,12 @@ class Notifier:
                         # update is never handed back on the next poll — including the
                         # command poller, which shares this counter.
                         self._updates_offset = max(self._updates_offset, update_id + 1)
+                    if isinstance(update.get("widget_query"), Mapping):
+                        await self._handle_menu_widget_query(update["widget_query"], config)
+                        continue
+                    if isinstance(update.get("callback_query"), Mapping):
+                        await self._handle_menu_callback(update["callback_query"], config)
+                        continue
                     sender = _sender_from_update(update)
                     if sender is None or sender.chat_id is None:
                         continue
@@ -1621,6 +1666,12 @@ class Notifier:
                 update_id = update.get("update_id")
                 if isinstance(update_id, int):
                     self._updates_offset = max(self._updates_offset, update_id + 1)
+                if isinstance(update.get("widget_query"), Mapping):
+                    await self._handle_menu_widget_query(update["widget_query"], config)
+                    continue
+                if isinstance(update.get("callback_query"), Mapping):
+                    await self._handle_menu_callback(update["callback_query"], config)
+                    continue
                 sender = _sender_from_update(update)
                 if sender is None:
                     continue
@@ -1655,6 +1706,11 @@ class Notifier:
                 command,
             )
             return False
+        if command in {"menu", "account", "positions", "orders", "signals"} and (
+            sender.chat_type != "private" or sender.user_id is None
+            or sender.chat_id != sender.user_id
+        ):
+            return False
         return await self._reply_command(sender, command, config)
 
     async def _reply_command(
@@ -1664,12 +1720,16 @@ class Notifier:
         if sender.chat_id is None or not config.token:
             return False
         locale = config.locale
+        if command == "menu":
+            return await self._send_menu(sender, config)
         if command == "start":
             text = self.render_cmd_start(config)
         elif command == "status":
             text = await self._render_cmd_status(config)
         elif command == "help":
             text = self.render_cmd_help(locale)
+        elif command in {"account", "positions", "orders", "signals"}:
+            text = await self._render_readonly_command(command, locale)
         else:
             text = _esc(render("cmd.unknown", locale))
         html_parts, plain_parts = self._compose_parts(text, None, locale)
@@ -1683,12 +1743,142 @@ class Notifier:
                 "disable_web_page_preview": True,
                 "reply_markup": dict(KEYBOARD_REMOVE),
             }
-            ok, error = await self._send_with_retries(config.token, payload, plain, "command")
+            ok, error = await self._send_with_retries(config.token, payload, plain, "command", rich=True, widget=True)
             if not ok:
                 break
         if not ok:
             log.warning("notifier_command_reply_failed command=%s error=%s", command, error)
         return ok
+
+    @staticmethod
+    def _menu_keyboard(locale: str, *, widget: bool = True) -> dict[str, Any]:
+        labels = ({"status": "Статус", "account": "Счёт", "positions": "Позиции",
+                   "orders": "Ордера", "signals": "Сигналы", "help": "Помощь"}
+                  if locale == "ru" else
+                  {"status": "Status", "account": "Account", "positions": "Positions",
+                   "orders": "Orders", "signals": "Signals", "help": "Help"})
+        return {"inline_keyboard": [[{"text": labels[k], "callback_data": "lvct:menu:" + ("w:" if widget else "t:") + k}
+                                     for k in row] for row in
+                                    (("status", "account"), ("positions", "orders"), ("signals", "help"))]}
+
+    async def _menu_body(self, tab: str, config: NotifierConfig) -> str:
+        if tab == "status":
+            return await self._render_cmd_status(config)
+        if tab == "help":
+            return self.render_cmd_help(config.locale)
+        if tab in {"account", "positions", "orders", "signals"}:
+            return await self._render_readonly_command(tab, config.locale)
+        raise ValueError("unknown menu tab")
+
+    @staticmethod
+    def _menu_state(body: str, locale: str, tab: str = "status") -> str:
+        # Telegram caps chat_data at 1024 UTF-8 bytes. Never truncate a price or
+        # silently show incomplete exposure: direct the operator to the command.
+        plain = html_to_plain(body)
+        lines = [x.strip() for x in plain.splitlines() if x.strip()]
+        data = {"title": lines[0] if lines else "LV Copytrader", "lines": lines[1:], "tab": tab, "locale": locale}
+        encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        # Widgets cannot scroll and are clipped at 600px; estimate line wraps
+        # for a narrow phone, including room for the six in-widget buttons.
+        estimated_lines = sum(max(1, (len(line) + 27) // 28) for line in lines)
+        if len(encoded.encode("utf-8")) > 1024 or len(lines) > 12 or estimated_lines > 13:
+            detail = ("Слишком много данных — откройте соответствующую команду."
+                      if locale == "ru" else "Too much data — open the corresponding command.")
+            encoded = json.dumps({"title": data["title"], "lines": [detail], "tab": tab, "locale": locale}, ensure_ascii=False, separators=(",", ":"))
+        return encoded
+
+    async def _send_menu(self, sender: UpdateSender, config: NotifierConfig) -> bool:
+        body = await self._menu_body("status", config)
+        common = {"chat_id": sender.chat_id}
+        payload = {**common, "html": build_menu_widget(), "chat_data": self._menu_state(body, config.locale), "allow_queries": True}
+        result = await self._call(config.token, "sendWidget", params=payload)
+        if result.ok:
+            return True
+        # Only a definitive refusal permits fallback; a timeout could mean the
+        # widget was already delivered and must not produce another message.
+        if (result.status == 404 or result.entity_error or
+                (result.status == 400 and any(x in result.error.lower() for x in ("widget", "unsupported", "not available")))):
+            result = await self._call(config.token, "sendMessage", params={**common, "reply_markup": self._menu_keyboard(config.locale, widget=False), "text": body, "parse_mode": "HTML"})
+        if not result.ok:
+            log.warning("notifier_menu_send_failed error=%s", result.error)
+        return result.ok
+
+    async def _handle_menu_widget_query(self, query: Mapping[str, Any], config: NotifierConfig) -> None:
+        """Validate a widget tap, edit the same private message, and acknowledge it."""
+        query_id = query.get("id")
+        if not isinstance(query_id, str) or not query_id:
+            return
+        success = False
+        try:
+            data, chat, user, message_id = query.get("data"), query.get("chat"), query.get("from"), query.get("message_id")
+            qtype = query.get("type")
+            if qtype is not None and (not isinstance(qtype, Mapping) or qtype.get("type") != "data"):
+                return
+            if not isinstance(data, str) or not data.startswith("lvct:menu:"):
+                return
+            tab = data.removeprefix("lvct:menu:")
+            if tab not in {"status", "account", "positions", "orders", "signals", "help"}:
+                return
+            if not isinstance(chat, Mapping) or chat.get("type") != "private" or not isinstance(user, Mapping):
+                return
+            user_id = user.get("id")
+            if (not isinstance(user_id, int) or isinstance(user_id, bool) or chat.get("id") != user_id
+                    or not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0):
+                return
+            sender = UpdateSender(user_id=user_id, chat_id=user_id, chat_type="private")
+            if not command_sender_allowed(sender, config):
+                return
+            async def update() -> bool:
+                body = await self._menu_body(tab, config)
+                result = await self._call(config.token, "editMessageWidgetData", params={
+                    "chat_id": user_id, "message_id": message_id,
+                    "chat_data": self._menu_state(body, config.locale, tab),
+                })
+                return result.ok or "message is not modified" in result.error.lower()
+            # Telegram gives us 15 seconds to answer; slow broker reads fail closed.
+            success = await asyncio.wait_for(update(), timeout=9.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("notifier_widget_menu_failed error=%s", type(exc).__name__)
+        finally:
+            await self._call(config.token, "answerWidgetQuery", params={
+                "widget_query_id": query_id, "data": json.dumps({"ok": success}, separators=(",", ":")),
+            })
+
+    async def _handle_menu_callback(self, query: Mapping[str, Any], config: NotifierConfig) -> None:
+        query_id = query.get("id")
+        if not isinstance(query_id, str) or not query_id:
+            return
+        # Always clear Telegram's spinner, even for stale or unauthorized taps.
+        await self._call(config.token, "answerCallbackQuery", params={"callback_query_id": query_id})
+        data, message, user = query.get("data"), query.get("message"), query.get("from")
+        if not isinstance(data, str) or not data.startswith("lvct:menu:"):
+            return
+        parts = data.removeprefix("lvct:menu:").split(":")
+        if len(parts) != 2 or parts[0] not in {"w", "t"}:
+            return
+        mode, tab = parts
+        if tab not in {"status", "account", "positions", "orders", "signals", "help"}:
+            return
+        if not isinstance(message, Mapping) or not isinstance(user, Mapping):
+            return
+        chat, user_id, message_id = message.get("chat"), user.get("id"), message.get("message_id")
+        if not isinstance(chat, Mapping) or chat.get("type") != "private" or not isinstance(user_id, int) or isinstance(user_id, bool):
+            return
+        if chat.get("id") != user_id or not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0:
+            return
+        sender = UpdateSender(user_id=user_id, chat_id=user_id, chat_type="private")
+        if not command_sender_allowed(sender, config):
+            return
+        body = await self._menu_body(tab, config)
+        common = {"chat_id": user_id, "message_id": message_id}
+        if mode == "w":
+            result = await self._call(config.token, "editMessageWidgetData", params={**common, "chat_data": self._menu_state(body, config.locale, tab)})
+        else:
+            result = await self._call(config.token, "editMessageText", params={**common, "text": body, "parse_mode": "HTML", "reply_markup": self._menu_keyboard(config.locale, widget=False)})
+        if not result.ok and "message is not modified" not in result.error.lower():
+            log.warning("notifier_menu_update_failed tab=%s error=%s", tab, result.error)
 
     def render_cmd_start(self, config: NotifierConfig) -> str:
         """``/start``: the bot is up, and whether a chat is bound."""
@@ -1744,13 +1934,89 @@ class Notifier:
                 locale,
             )
         )
+        lines.append(self._line("cmd.status.provider", self._health_dot(payload.get("provider"), locale), locale))
         armed = bool(payload.get("armed", False))
         arm = render("cmd.status.armed" if armed else "cmd.status.disarmed", locale)
         lines.append(self._line("cmd.status.arm", _esc(arm), locale))
         return "\n".join(lines)
 
+    async def _render_readonly_command(self, command: str, locale: str) -> str:
+        """Read the live broker and active source; no commands mutate trading state."""
+        heading = _bold(_esc(render(f"cmd.{command}.heading", locale)))
+        executor = getattr(self._runtime, "executor", None)
+        try:
+            if executor is None:
+                raise RuntimeError("executor unavailable")
+            if command == "account":
+                data = await executor.get_account()
+                if not isinstance(data, Mapping) or data.get("ok") is not True:
+                    raise RuntimeError("account unavailable")
+                currency = str(data.get("currency") or "")
+                lines = [heading]
+                for key, label in (("balance", "cmd.account.balance"), ("equity", "cmd.account.equity"),
+                                   ("floating_profit", "cmd.account.floating"), ("margin_free", "cmd.account.free")):
+                    value = _fmt_price(data.get(key), 2)
+                    if value is not None:
+                        lines.append(self._line(label, _num(f"{value} {currency}".strip()), locale))
+                return "\n".join(lines)
+            if command in {"positions", "orders"}:
+                from app.trading.constants import POSITION_TYPE_NAMES, ORDER_TYPE_NAMES
+                # MetaTrader returns None on error and an empty tuple when truly empty.
+                # Never collapse a failed broker read into "no open positions".
+                rpc = getattr(self._runtime, "rpc", None)
+                if rpc is None:
+                    raise RuntimeError("broker unavailable")
+                rows = await (rpc.positions_get() if command == "positions" else rpc.orders_get())
+                if not isinstance(rows, (tuple, list)):
+                    raise RuntimeError("broker data unavailable")
+                lines = [heading]
+                for item in rows[:3]:
+                    symbol = _esc(getattr(item, "symbol", None) or "—", limit=MAX_CODE_CHARS)
+                    typ = int(getattr(item, "type"))
+                    side = _esc(str((POSITION_TYPE_NAMES if command == "positions" else ORDER_TYPE_NAMES).get(typ, "—")).upper(), limit=24)
+                    ticket = _num(getattr(item, "ticket", None) or "—")
+                    external = f" · {_esc(render('cmd.external', locale))}" if int(getattr(item, "magic")) != int(self._settings.MAGIC_NUMBER) else ""
+                    lines.append(f"{_bold(side)} {symbol} · {ticket}{external}")
+                    volume = _fmt_volume(getattr(item, "volume" if command == "positions" else "volume_current", None)) or "—"
+                    price = _fmt_price(getattr(item, "price_open", None), None) or "—"
+                    sl = _fmt_price(getattr(item, "sl", None), None) or "—"
+                    tp = _fmt_price(getattr(item, "tp", None), None) or "—"
+                    lines.append(f"{_num(volume)} · {_num(price)} · SL {_num(sl)} · TP {_num(tp)}")
+                    profit = getattr(item, "profit", None)
+                    if command == "positions" and profit is not None:
+                        lines.append(self._line("cmd.account.floating", _num(_fmt_price(profit, 2) or "—"), locale))
+                if not rows:
+                    lines.append(_esc(render("cmd.list.empty", locale)))
+                elif len(rows) > 3:
+                    lines.append(_esc(render("cmd.list.more", locale, shown=3, total=len(rows))))
+                return "\n".join(lines)
+            data = await executor.get_recent_signals(10)
+            rows = data.get("signals") if isinstance(data, Mapping) and data.get("ok") is True else None
+            if not isinstance(rows, list):
+                raise RuntimeError("signal data unavailable")
+            lines = [heading]; seen = set()
+            for item in rows:
+                if not isinstance(item, Mapping):
+                    continue
+                ident = item.get("message_id")
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                text = str(item.get("text") or "").strip().replace("\n", " · ")
+                lines.append(_esc(_truncate(text or str(item.get("kind") or "—"), 130)))
+                if len(seen) >= 3:
+                    break
+            if not seen:
+                lines.append(_esc(render("cmd.list.empty", locale)))
+            return "\n".join(lines)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("notifier_readonly_command_failed command=%s error=%s", command, type(exc).__name__)
+            return heading + "\n" + _esc(render("cmd.unavailable", locale))
+
     def render_cmd_help(self, locale: str | None = None) -> str:
-        """``/help``: the three commands and nothing from the old product."""
+        """List the supported read-only commands."""
         loc = normalize_locale(locale or self._config.locale)
         lines = [_bold(_esc(render("cmd.help.heading", loc), limit=MAX_CODE_CHARS))]
         for name in BOT_COMMAND_NAMES:
@@ -2317,6 +2583,7 @@ class Notifier:
         ntype: str,
         *,
         rich: bool = False,
+        widget: bool = False,
     ) -> tuple[bool, str | None]:
         """Send, retrying at NOTIFY_RETRY_DELAYS while retrying can plausibly help."""
         delays = tuple(float(delay) for delay in self._settings.NOTIFY_RETRY_DELAYS)
@@ -2332,11 +2599,32 @@ class Notifier:
             payload["rich_message"] = {
                 "html": telegram_html_to_rich_html(str(fallback_payload["text"]))
             }
+        rich_payload = dict(payload)
+        chat_id = fallback_payload.get("chat_id")
+        # Production widgets are supported only in a private chat (positive ID).
+        if widget and isinstance(chat_id, int) and not isinstance(chat_id, bool) and chat_id > 0:
+            widget_html = build_notification_widget(str(fallback_payload.get("text") or ""))
+            if widget_html:
+                method = "sendWidget"
+                payload = {key: value for key, value in fallback_payload.items()
+                           if key not in {"text", "disable_web_page_preview"}}
+                payload["html"] = widget_html
+                # A caption would repeat the full card below the widget. Older
+                # Telegram clients need to be updated to display widget messages.
+                payload.pop("parse_mode", None)
         while True:
             result = await self._call(token, method, params=payload)
             if result.ok:
                 return True, None
             last_error = result.error
+            if method == "sendWidget" and (
+                result.entity_error or result.status == 404
+                or (result.status == 400 and any(word in result.error.lower()
+                    for word in ("widget", "unsupported", "private chat", "caption", "not available")))
+            ):
+                method = "sendRichMessage" if rich else "sendMessage"
+                payload = rich_payload if rich else fallback_payload
+                continue
             if method == "sendRichMessage" and (
                 result.entity_error or result.status == 404
                 or (result.status == 400 and any(word in result.error.lower()

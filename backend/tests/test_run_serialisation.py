@@ -42,7 +42,7 @@ def test_a_signal_run_still_gets_the_whole_toolset() -> None:
     assert "get_channel_ladder_stats" in names
 
 
-async def test_run_agent_allows_three_concurrent_runs_and_no_fourth() -> None:
+async def test_run_agent_allows_three_concurrent_runs_and_no_fourth(monkeypatch) -> None:
     """A busy worker must not block the next two posts. The fourth waits for a free slot."""
     slots = loop_mod.run_slots()
     assert isinstance(slots, asyncio.Semaphore)
@@ -63,6 +63,12 @@ async def test_run_agent_allows_three_concurrent_runs_and_no_fourth() -> None:
         return {"run_id": self.run_id, "status": "finished", "decision": "ignored",
                 "summary": "", "error": None}
 
+    # This test exercises the worker semaphore without a database; represent
+    # four independent, successfully resolved signal chains.
+    async def fake_chain_key(row_id, kind):
+        return f"test:{row_id}"
+
+    monkeypatch.setattr(loop_mod, "_chain_key_for", fake_chain_key)
     original = loop_mod._AgentRun.execute
     loop_mod._AgentRun.execute = fake_execute
     try:

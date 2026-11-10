@@ -1169,8 +1169,8 @@ class SlWatchdog:
 
         The run is awaited so two cycles can never chase the same ticket at once and so
         ``attempts`` counts finished attempts rather than started ones. This run goes
-        through the normal arm gate: disarmed, ``modify_position`` refuses and the three
-        attempts burn down to the fallback, which is exactly the designed behaviour.
+        with a ticket-scoped context: adding an SL remains possible while disarmed,
+        while changing any other position or target is refused.
         """
         from app.ai.loop import run_agent
 
@@ -1194,6 +1194,7 @@ class SlWatchdog:
             message_row_id=None,
             kind="sl_watchdog",
             instruction=instruction,
+            watchdog_ticket=action.ticket,
         )
 
     async def _apply_fallback(self, action: _StoplessAction) -> None:

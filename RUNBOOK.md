@@ -287,30 +287,65 @@ What still serialises, on purpose:
 - broker writes (open, modify, close, cancel) stay one at a time inside the executor.
 
 The channel reviewer is a **separate** task named `channel_reviewer`. It does not take a
-signal slot. Once per source it writes a short playbook (60 lines at most) to
-`/data/channel-briefs/active/brief.md`. Triage appends that file so celebration posts are
-easier to answer `no`. Until the file exists, triage uses the same prompt as before, and
-copytraders keep trading.
+signal slot and runs only when `reviewer.enabled` is on. It writes the active source's
+playbook to `/data/channel-briefs/active/brief.md`, capped at 60 lines and 12,000 characters.
+Triage and the trading agent receive it as untrusted context, only when its source marker
+matches their Telegram chat. If no matching playbook exists they proceed without one.
 
-The sample is the messages already stored for that source. If there are fewer than
-`CHANNEL_BRIEF_MIN_MESSAGES` (12), or they span less than two days, the reviewer reads the
-last 3–4 days from the connected Telegram channel. Those posts are study notes only: they
-are not ingested and they do not move `last_message_id`.
+Every 15 minutes the reviewer checks the active source. If its recent sample changed, it
+replaces the playbook; it does not append older versions. The newest posts are retained in
+its bounded sample. A failed refresh retains the previous matching playbook and retries
+later. The sample comes from the database and, on refresh or when the sample is thin, the last
+3–4 days of Telegram history. Fresh Telegram edits take precedence on refresh. Study reads do not ingest signals or move `last_message_id`.
 
-Changing the signal source (a new `chat_id` in the channel picker) moves the previous
-playbook and its study notes into `/data/channel-briefs/backups/`. That directory is not
-on the path triage or the agent can open. The new channel gets a fresh study. Selecting
-the same channel again does not study it a second time, and nothing re-studies on a clock.
+Changing the active source archives the previous playbook and notes separately so it can be
+reviewed or restored. Those archives are never injected into active AI runs. Initial studies
+retry after the same delay if the model or Telegram is unavailable. Three signal workers
+process different posts concurrently. For the XAUUAD source, each entry is also classified
+in three independent, tool-free model sessions; two matching votes are required for an
+automatic fast entry or a skip. Verified follow-up protection does not wait for AI votes.
 
-The study uses whatever provider is saved in Settings (OpenAI-compatible, including a
-ZenMux base URL). It does not schedule itself. A missing provider or a Telegram client
-that is not up yet leaves the brief unpublished; the next source change, sign-in, or
-provider save tries once more. After three failed model calls it stops until the channel
-changes.
 
-This behaviour ships on the `upgraded` branch. It is not a deploy step and it does not
-touch a VPS by itself.
+### Opt-in gold source strategy
 
+The private `trading.uz_gold_policy` setting remains disabled unless the owner
+explicitly configures it. The source must match the private research-only marker;
+all direct AI writes for that source remain blocked. The deterministic path
+requires a live quote, current unedited entry, two hedging legs, owner-set total
+volume, a 15-unit gold-price stop on both orders, three independent AI checks and
+a confirmed broker stop. Targets may be added by editing the same signal, and a
+reply requesting break-even touches only tracked positions of that signal.
+
+The 15-unit stop is relative to the requested quote: fills, slippage, commissions
+and gaps can make realised losses different. Missed zones, old/edited entries,
+re-entry requests and ambiguous/unthreaded management instructions are not
+automatically turned into new orders. An edited direction disarms new entries;
+the system never automatically closes or reverses those existing positions.
+
+### Research-only sources
+
+A private `ingest.research_only_chat_id` runtime setting marks a source as
+research-only. Its posts are recorded and its channel playbook can be studied,
+but the signal loop defers them and the executor refuses AI trade writes even
+if trading is armed. The stop-loss watchdog and manual controls remain separate.
+Selecting a source does not authorize or configure its order size, SL, targets,
+reentries, or handling of edited messages. Configure and test a complete source
+profile before removing this guard. Never hard-code private chat identifiers in
+source or public exports.
+
+### Codex provider (optional)
+
+The `codex` Compose profile runs a local, capability-token-protected app-server in the
+application's network namespace. Prepare its executable and separate ChatGPT device-login
+session in the `lvCT-data` volume before enabling the profile, then select Codex and
+`gpt-6.1-terra` in Settings. Its reasoning effort is medium. The port is not published;
+keep the session and access-token files private. A ChatGPT session may need a fresh device
+login after expiration or revocation. The private runtime snapshot does not include this
+separate session directory, so do not assume a cloned repository restores the login.
+
+The source-specific XAUUAD profile uses two 0.20-lot entries and applies a later verified SL,
+TP2 and TP4 to the same tickets; opening without SL exposes the position until protection
+arrives. A missing or contradictory follow-up is rejected rather than guessed.
 
 ### MT5 isolation and security maintenance
 

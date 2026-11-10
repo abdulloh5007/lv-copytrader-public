@@ -6,16 +6,18 @@
 .lumi-sprite{position:absolute;inset:0;background-image:url('pets/lv1/sprites-b322f4a58a72.webp');background-repeat:no-repeat;background-size:400% 800%;transform-origin:50% 85%;filter:drop-shadow(0 4px 7px #0005);pointer-events:none;transition:filter .2s}
 .lumi[data-state="walk-left"] .lumi-sprite{transform:scaleX(-1)}
 .lumi.is-dragging .lumi-sprite{filter:drop-shadow(0 12px 10px #0007);transform:rotate(var(--drag-lean,0deg)) scale(1.04)}
-.lumi-bubble{position:absolute;left:calc(var(--bubble-offset,0px) + 8px);bottom:calc(100% + 7px);width:max-content;max-width:min(218px,calc(100vw - 36px));padding:10px 14px;border:1px solid #7cbaec45;border-radius:14px 14px 14px 4px;background:linear-gradient(140deg,#1c2b3df5,#101922f5);box-shadow:0 8px 24px #0004;color:#e8f4ff;font:500 13px/1.5 Inter,Arial,sans-serif;letter-spacing:0;text-align:left;opacity:0;transform:translateY(6px) scale(.96);transform-origin:25% 100%;transition:opacity .25s,transform .3s;pointer-events:none}
-.lumi-bubble.is-visible{opacity:1;transform:translateY(0) scale(1)}
-.lumi-bubble[data-tone="profit"]{border-color:#5adca16b;color:#82edbc;background:linear-gradient(140deg,#14302af5,#101e23f5)}
-.lumi-bubble[data-tone="loss"]{border-color:#eb8a8a65;color:#f5a0a0;background:linear-gradient(140deg,#302029f5,#1d1621f5)}
+.lumi-bubble{position:absolute;left:calc(68% + 8px);top:-4%;width:max-content;max-width:min(190px,var(--bubble-space,190px));padding:8px 11px;border:1px solid var(--border-strong,#414141);border-radius:16px;background:var(--surface-2,#141414);box-shadow:0 8px 28px rgb(0 0 0 / .14);color:var(--text,#ededed);font:600 11px/1.45 var(--font-mono,'SFMono-Regular',Consolas,monospace);letter-spacing:.01em;text-align:left;overflow-wrap:anywhere;opacity:0;transform:scale(.2);transform-origin:left 20px;transition:opacity .18s ease,transform .22s ease-in,background-color .25s,border-color .25s,color .25s;pointer-events:none}
+.lumi-bubble::before{content:"";position:absolute;left:-6px;top:14px;width:9px;height:9px;background:inherit;border-left:1px solid var(--border-strong,#414141);border-bottom:1px solid var(--border-strong,#414141);transform:rotate(45deg)}
+.lumi[data-facing="left"] .lumi-bubble{left:auto;right:calc(68% + 8px);transform-origin:right 20px}
+.lumi[data-facing="left"] .lumi-bubble::before{left:auto;right:-6px;border:0;border-top:1px solid var(--border-strong,#414141);border-right:1px solid var(--border-strong,#414141)}
+.lumi-bubble.is-visible{opacity:1;transform:scale(1);transition:opacity .16s ease,transform .42s cubic-bezier(.2,1.48,.35,1),background-color .25s,border-color .25s,color .25s}
+.lumi-bubble[data-tone="profit"]{color:var(--long,#3ecf8e)}
+.lumi-bubble[data-tone="loss"]{color:var(--short,#ff6b6b)}
 .lumi-bills{position:absolute;inset:0;pointer-events:none;overflow:visible}
 .lumi-bill{position:absolute;left:72%;top:34%;width:19px;height:12px;background:url('pets/lumi/banknote-858b9eb56732.svg') center/contain no-repeat;opacity:0;animation:lv1-money 2s var(--delay) cubic-bezier(.2,.65,.4,1) both}
 @keyframes lv1-money{0%{opacity:0;transform:translate(0,0) rotate(-20deg)}8%{opacity:1}44%{opacity:1;transform:translate(calc(var(--fly-x)*.55),var(--fly-y)) rotate(calc(var(--fly-r)*.45))}75%{opacity:1}100%{opacity:0;transform:translate(var(--fly-x),45px) rotate(var(--fly-r))}}
-@media(max-width:600px){.lumi{--pet-size:108px}.lumi-bubble{font-size:12px;max-width:200px;padding:9px 12px}}
-@media(prefers-reduced-motion:reduce){.lumi,.lumi-bubble{transition:none}.lumi-bill{animation:none}.lumi.is-dragging .lumi-sprite{transform:none}}
-.lumi[data-near-top="true"] .lumi-bubble{bottom:auto;top:calc(100% + 8px);transform-origin:25% 0}
+@media(max-width:600px){.lumi{--pet-size:108px}.lumi-bubble{font-size:10px;padding:8px 10px}}
+@media(prefers-reduced-motion:reduce){.lumi,.lumi-bubble,.lumi-bubble.is-visible{transition:none}.lumi-bill{animation:none}.lumi.is-dragging .lumi-sprite{transform:none}}
 
 .lumi .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 
@@ -30,10 +32,12 @@
 .lumi .lumi-sprite{display:none}
 .lumi .lumi-action-rig,.lumi .lumi-walk-rig{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;filter:drop-shadow(0 4px 7px #0005);display:block;transition:opacity .22s ease;transform-origin:50% 85%}
 .lumi .lumi-action-rig{opacity:1}.lumi .lumi-walk-rig{opacity:0}
+.lumi[data-facing="left"] .lumi-action-rig{transform:scaleX(-1)}
 .lumi[data-state="walk-right"] .lumi-action-rig,.lumi[data-state="walk-left"] .lumi-action-rig{opacity:0}
 .lumi[data-state="walk-right"] .lumi-walk-rig,.lumi[data-state="walk-left"] .lumi-walk-rig{opacity:1}
 .lumi.is-dragging .lumi-action-rig{transform:rotate(var(--drag-lean,0deg)) scale(1.04);filter:drop-shadow(0 12px 10px #0007)}
-@media(prefers-reduced-motion:reduce){.lumi .lumi-action-rig,.lumi .lumi-walk-rig{transition:none}.lumi.is-dragging .lumi-action-rig{transform:none}}
+.lumi[data-facing="left"].is-dragging .lumi-action-rig{transform:scaleX(-1) rotate(var(--drag-lean,0deg)) scale(1.04)}
+@media(prefers-reduced-motion:reduce){.lumi .lumi-action-rig,.lumi .lumi-walk-rig{transition:none}.lumi.is-dragging .lumi-action-rig{transform:none}.lumi[data-facing="left"].is-dragging .lumi-action-rig{transform:scaleX(-1)}}
 
 /* If the articulated pose cannot load, keep the atlas sprite visible and interactive. */
 .lumi[data-fallback="sprite"] .lumi-sprite{display:block;visibility:visible}

@@ -12,9 +12,9 @@ export function PublicPet() {
       if (cancelled) return;
       css = document.createElement('link');
       css.rel = 'stylesheet';
-      css.href = '/assets/showcase/lumi.css?v=public-pet-5';
+      css.href = '/assets/showcase/lumi.css?v=public-pet-7';
       document.head.append(css);
-      const moduleUrl = new URL('/assets/showcase/lumi.js?v=public-pet-5', window.location.origin).href;
+      const moduleUrl = new URL('/assets/showcase/lumi.js?v=public-pet-6', window.location.origin).href;
       void import(/* @vite-ignore */ moduleUrl).then((module: { mountPet: () => () => void }) => {
         if (!cancelled) dispose = module.mountPet();
       }).catch((error: unknown) => { console.error('[LV-1] Failed to load the companion', error); });

@@ -612,3 +612,25 @@ async def test_classic_open_allows_five_dollars_and_refuses_six(data_dir: Path) 
     )
     assert opened["ok"] is True, opened["message"]
     assert broker.positions
+
+
+async def test_xauuad_channel_requires_fill_inside_its_zone(data_dir: Path) -> None:
+    from app.ai.xauuad_template import CHANNEL_CHAT_ID
+    from app.db import init_db
+    await init_db()
+    async with session_scope() as session:
+        source = Source(kind='telegram', chat_id=CHANNEL_CHAT_ID, title='Test channel',
+                        username='example', entity_type='channel', is_active=True)
+        session.add(source)
+        await session.flush()
+        row = Message(source_id=source.id, message_id=1, kind='text', status='pending',
+                      text='XAUUSD BUY 4014=11', posted_at=datetime.now(UTC).replace(tzinfo=None))
+        session.add(row)
+        await session.flush()
+        row_id, ref = row.id, row.signal_ref
+    common = dict(origin='agent', bypass_arm=False, message_row_id=row_id, signal_ref=ref,
+                  symbol_name='XAUUSDm', pip_size=0.1, pip_convention='metal_gold_0.10', side='buy')
+    inside = await check_open(**common, bid=4012.8, ask=4013.0)
+    outside = await check_open(**common, bid=4014.1, ask=4014.3)
+    assert inside.allow
+    assert not outside.allow and outside.reason == 'far_from_entry'

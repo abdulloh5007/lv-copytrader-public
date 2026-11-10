@@ -9,10 +9,22 @@
     button.classList.remove('copied', 'copy-failed');
     button.setAttribute('aria-label', ui.copy);button.title = ui.copy;
   }
-  document.getElementById('language').addEventListener('change', event => {
-    const language = event.target.value;
-    try { localStorage.setItem('sp-locale', language); } catch {}
-    location.assign('/' + language + '/' + (config.slug ? config.slug + '/' : '') + location.hash);
+  const languageMenu = document.getElementById('language');
+  languageMenu.querySelectorAll('[data-language]').forEach(link => {
+    link.addEventListener('click', () => {
+      try { localStorage.setItem('sp-locale', link.dataset.language); } catch {}
+      link.hash = location.hash;
+    });
+  });
+  document.addEventListener('click', event => {
+    if (!languageMenu.contains(event.target)) languageMenu.open = false;
+  });
+  languageMenu.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && languageMenu.open) {
+      event.preventDefault();
+      languageMenu.open = false;
+      languageMenu.querySelector('summary').focus();
+    }
   });
   document.getElementById('theme').addEventListener('click', () => {
     const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

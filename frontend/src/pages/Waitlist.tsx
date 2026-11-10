@@ -72,7 +72,7 @@ export default function Waitlist() {
     }
   }
   return (
-    <PublicLayout star>
+    <PublicLayout star docs>
       <section className="waitlist" aria-labelledby={`${id}-title`}>
         <div className="release-tag">
           <span className="release-tag__dot" />

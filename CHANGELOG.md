@@ -5,6 +5,110 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Dependency security
+
+- Updated pyasn1 to 0.6.5 to address four ASN.1 decoding vulnerabilities.
+
+### Telegram notification widgets
+
+- Added a private quick menu with styled read-only buttons inside the widget;
+  validate and answer every tap, update the same card and fall back to one
+  editable text message when widgets are unavailable.
+
+- Removed the duplicate visible caption and matched widget colours and rounded
+  surfaces to the website's light and dark themes.
+- Added owner-only, read-only account, positions, pending orders and recent
+  channel commands; report broker failures instead of false empty lists.
+
+- Display private-chat trading events, warnings, errors and command replies as
+  compact Telegram Bot API 10.4 HTML widgets without duplicate captions.
+- Fall back to rich and classic messages when widgets are unavailable or too
+  long, while retaining grouped entries and existing notification permissions.
+
+### Gold channel entry window
+
+- Support an explicitly configured, time-limited wait for gold to return to an
+  entry zone, with a bounded price tolerance and no automatic order retry.
+- Recheck source, edits, later channel messages, fresh quote and armed state;
+  discard waits on restart and refuse entry after the first target is reached.
+- Added simulated-broker tests for waiting, price tolerance, cancellation,
+  signal changes and the two protected trade legs.
+
+### Documentation interface
+
+- Restyled scrollbars and replaced the system language selector with an accessible
+  custom menu; matched previous and next navigation cards across screen sizes.
+- Kept previous and next cards compact instead of stretching across the page.
+
+### Source-specific gold trading
+
+- Added an opt-in, source-bound gold strategy with a fixed stop in price units,
+  explicit two-leg sizing and three independent pre-entry classifications.
+- Attach subsequently edited TP levels to the original tickets and handle a
+  reply requesting break-even without opening or reversing positions.
+- Require a fresh quote, the current unedited signal, matching direction and
+  entry zone; reject stale, ambiguous, corrected or replayed signals.
+- Verify each broker fill and its stop, never reprice or retry an uncertain
+  order, and disable entries on partial, unverified or unrecorded fills.
+- Added simulated-broker coverage for fixed stops, late targets, break-even,
+  contradictory edits, provider disagreement and broker failures.
+
+### Research-only channel onboarding
+
+- Added a research-only source mode that blocks AI trading writes until the
+  operator defines and verifies the channel's execution policy.
+- Added a non-trading parser for abbreviated Uzbek gold price zones, targets and
+  management messages; ambiguous or contradictory prices fail closed. Recent
+  posts may be interpreted against a broker quote and saved for inspection,
+  explicitly marking that quote freshness was not verified.
+- Kept the research-only source identifier in private runtime settings.
+
+### Channel correction and stop-loss protection
+
+- Stop automatic entries and notify the operator if the source edits a signal's
+  direction or entry zone; verify the latest revision and direction again before
+  each broker order. Never automatically reverse an existing position.
+- Restore the stop-loss watchdog for channel positions and limit it to adding
+  protection to its assigned unprotected ticket, even while entries are disabled.
+- Added regression tests for edited signals, changes between order legs, and
+  ticket-scoped watchdog protection.
+
+### Codex failure diagnostics
+
+- Report a sanitized upstream Codex failure and distinguish authentication, rate
+  limits and service outages while preventing tool calls from being replayed.
+
+### Codex provider
+
+- Monitor the optional Codex service on its local port in Docker Compose.
+
+- Added an opt-in Codex app-server provider for GPT-6.1 Terra with medium reasoning,
+  isolated per-run conversations, guarded dynamic tools and no automatic replay
+  after a tool result. Added Codex selection to the settings in three languages.
+- Verified authentication and a mock-only tool call against a local Codex service;
+  production activation still requires the separately configured service and a
+  reviewed deployment.
+
+### Refresh channel research
+
+- Refresh the bounded channel playbook when the recent message sample changes;
+  retain the last usable profile if a refresh fails, and never append to it.
+- Feed the matching active profile to classifier and trading runs as untrusted
+  context; do not mix profiles across Telegram sources.
+
+### Channel signal research
+
+- Added a source-specific parser for abbreviated gold entry zones and up to 12
+  targets, with fail-closed checks for contradictory levels and cautious matching
+  of threaded or uniquely matched recent unthreaded follow-ups.
+- Implemented two 0.20-lot teaser entries and subsequent attachment of channel SL,
+  TP2 and TP4 to the existing positions, with break-even for the second position
+  after the first closes. Added protections against duplicate entries, looser SL
+  and direct model trade writes for this source. Three isolated, tool-free AI
+  sessions classify entries in parallel and a two-vote agreement is required
+  for automatic fast entry. Follow-up protection is applied independently of AI.
+  Activation remains an explicit per-source configuration choice.
+
 ### Minimal film player
 
 - Simplified the film opening and replaced the pause card with centered playback
@@ -24,6 +128,20 @@ private and public releases share the same version, with separate Git histories.
 
 - Replaced the Russian film narration with ElevenLabs voice Ivan and synchronized
   word highlighting using the new audio timing data.
+
+### Shared documentation theme and attached LV-1 speech
+
+- The documentation now builds from the same theme tokens as the application, including
+  light/dark neutral surfaces, typography, borders and accessible feedback colors.
+- Anchored LV-1's speech bubble beside its head, with mirrored placement and facing on
+  the right side, a smaller monospace voice, and springy appearance and shrinking exit.
+- Kept the bubble attached during movement and respected reduced-motion preferences.
+
+### Waitlist documentation and companion styling
+
+- Linked the official documentation from the waitlist footer in the visitor's chosen language.
+- Restyled LV-1's speech bubble to match the site's rounded controls and light/dark theme,
+  retaining distinct TP and SL text colors.
 
 ### Visible copy feedback and simpler Windows install
 

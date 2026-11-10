@@ -118,6 +118,7 @@ PROBE_TOOL: ToolSpec = ToolSpec(
 _DEFAULT_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
     "openai": "https://api.openai.com",
+    "codex": "",
 }
 
 # ProbeCache.source is exactly these two: a capability read out of the provider's own metadata
@@ -139,7 +140,7 @@ def _normalize_kind(kind: str) -> str:
     normalized = (kind or "").strip().lower()
     if normalized not in _DEFAULT_BASE_URLS:
         raise ConfigError(
-            f"unknown provider kind {kind!r} — expected 'anthropic' or 'openai'",
+            f"unknown provider kind {kind!r} — expected 'anthropic', 'openai' or 'codex'",
             detail={"kind": kind},
         )
     return normalized

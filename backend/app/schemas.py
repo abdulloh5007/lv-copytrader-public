@@ -67,7 +67,7 @@ HeaderMap = dict[str, str]
 #: ``MAX_TP_SPLITS`` only caps classic one-per-target hedging splits.
 TpList = Annotated[list[PositiveFloat], Field(max_length=MAX_TP_INPUT)]
 
-ProviderKind = Literal["anthropic", "openai"]
+ProviderKind = Literal["anthropic", "openai", "codex"]
 Side = Literal["buy", "sell"]
 PendingKind = Literal["limit", "stop"]
 Direction = Literal["above", "below"]
@@ -289,7 +289,7 @@ class MT5Settings(RequestModel):
 class ProviderSettings(RequestModel):
     """PUT /api/settings/provider — which model flies the plane and how to reach it."""
 
-    kind: ProviderKind = Field(description="anthropic or any OpenAI-compatible endpoint.")
+    kind: ProviderKind = Field(description="Anthropic, an OpenAI-compatible endpoint, or a local Codex session.")
     base_url: str = Field(
         default="",
         description="Endpoint root; host, host/ and host/v1 all normalize to the same value.",

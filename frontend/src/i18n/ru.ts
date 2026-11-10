@@ -75,6 +75,8 @@ export const ru: Record<TranslationKey, string> = {
   'waitlist.story_preview': 'Превью интерактивного сайта LV Copy Trader',
   'waitlist.story': 'Как это работает',
   'waitlist.source': 'Исходный код',
+  'waitlist.docs': 'Документация',
+  'public.footer_navigation': 'Навигация внизу страницы',
   'waitlist.hosting_title': 'На вашем VPS',
   'waitlist.hosting_note': 'Самостоятельный запуск на вашем сервере. Общего облачного сервиса пока нет.',
   'waitlist.control_title': 'Ваш счёт и настройки',
@@ -612,10 +614,11 @@ export const ru: Record<TranslationKey, string> = {
   'settings.balance': 'Баланс',
 
   'settings.provider_hint':
-    'Anthropic или любой эндпоинт, говорящий на OpenAI-совместимом chat/completions.',
+    'Codex, Anthropic или OpenAI-совместимый сервис.',
   'settings.kind': 'Провайдер',
   'settings.anthropic': 'Anthropic',
   'settings.openai_compatible': 'OpenAI-совместимый',
+  'settings.codex_note': 'Используется отдельно подключённая локальная сессия Codex. GPT-6.1 Terra работает с уровнем medium.',
   'settings.base_url': 'Базовый URL',
   'settings.base_url_hint':
     'С хвостом /v1 или без него — оба приводятся к одному запросу.',
@@ -650,7 +653,7 @@ export const ru: Record<TranslationKey, string> = {
   'settings.override_hint':
     'Самостоятельно поднятые эндпоинты ломают любую эвристику — если знаете точно, переопределите результат проверки.',
   'settings.subscription_note':
-    'У потребительских подписок Claude и ChatGPT нет публичного API, поэтому торговать «по подписке» LV Copytrader не может. Используйте API-ключ Anthropic или OpenAI либо любой OpenAI-совместимый базовый URL — подходят OpenRouter, Groq, Together, LiteLLM, vLLM, LM Studio и локальная Ollama, — а поле дополнительных заголовков закрывает случай собственного шлюза.',
+    'Используйте API-ключ или OpenAI-совместимый адрес. Для подключённой сессии ChatGPT выберите Codex.',
   'settings.vision_required_note':
     'Модель, не читающая изображения, пропустит каждый скриншот графика из канала.',
 

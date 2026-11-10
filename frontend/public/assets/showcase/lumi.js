@@ -44,7 +44,15 @@ const rand=(a,b)=>a+Math.random()*(b-a),clock=()=>performance.now()/1000;
 const viewport=()=>({w:document.documentElement.clientWidth,h:window.visualViewport?.height||innerHeight});
 function bounds(){const {w,h}=viewport(),bottomGap=w<=600?92:38;return {left:10,top:20,right:Math.max(10,w-size-16),bottom:Math.max(20,h-height-bottomGap)};}
 function clampPosition(){const b=bounds();x=Math.max(b.left,Math.min(x,b.right));y=Math.max(b.top,Math.min(y,b.bottom));}
-function paintPosition(){root.style.transform=`translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,0)`;root.dataset.x=x.toFixed(1);root.dataset.y=y.toFixed(1);root.dataset.nearTop=String(y<100);const {w}=viewport();root.style.setProperty('--bubble-offset',`${Math.max(-x+6,Math.min(0,w-x-235))}px`);}
+function paintPosition(){
+ const {w}=viewport(),left=x+size/2>w/2;
+ root.style.transform=`translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,0)`;
+ root.dataset.x=x.toFixed(1);root.dataset.y=y.toFixed(1);
+ root.dataset.facing=left?'left':'right';
+ // The bubble remains anchored to the head, including while dragging or walking.
+ const anchor=left?x+size*.32:x+size*.68;
+ root.style.setProperty('--bubble-space',`${Math.max(60,(left?anchor:w-anchor)-16)}px`);
+}
 function layout(){size=parseFloat(getComputedStyle(root).getPropertyValue('--pet-size'))||112;height=size*208/192;clampPosition();if(goal){const b=bounds();goal.x=Math.max(b.left,Math.min(goal.x,b.right));goal.y=Math.max(b.top,Math.min(goal.y,b.bottom));}paintPosition();}
 function speak(text,duration=3.6,tone='neutral',force=false){if((signal&&!force)||!text)return;bubble.textContent=text;bubble.dataset.tone=tone;bubbleUntil=clock()+duration;bubble.classList.add('is-visible');wake();}
 function paintFrame(){const walking=states[state].sheet==='walk',frame=states[state].sequence[Math.floor(elapsed*states[state].fps)%states[state].sequence.length]%4;sprite.style.backgroundPosition=`${frame*100/3}% ${states[state].row*100/7}%`;actionRig.render(walking?'idle':state,elapsed,clock(),reduced);if(walking)walkRig.render(walkDistance/(size*.3));root.dataset.frame=String(walking?Math.floor(walkDistance/(size*.3)*8)%8:Math.floor(elapsed*60));}

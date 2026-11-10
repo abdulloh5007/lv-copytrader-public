@@ -344,8 +344,17 @@ def _as_price(value: float | tuple[float, float] | None) -> tuple[float | None, 
     return None, None
 
 
-def read_post(text: str) -> FastRead:
-    """Read side, symbol, entry, and only the levels the channel labeled."""
+def read_post(text: str, *, source_chat_id: int | None = None) -> FastRead:
+    """Read a post, using the source-specific zone format only for its channel."""
+    from app.ai.xauuad_template import CHANNEL_CHAT_ID, parse_channel_post
+    if source_chat_id == CHANNEL_CHAT_ID:
+        parsed = parse_channel_post(text)
+        return FastRead(
+            symbol='XAUUSD' if parsed.side else None, side=parsed.side,
+            entry=None, zone=parsed.zone, sl=parsed.sl, tps=parsed.targets,
+            now_hint=False, fresh=parsed.kind in ('entry', 'complete'),
+            ambiguous=parsed.kind == 'invalid',
+        )
     raw = _normalize(text)
     side, ambiguous = _direction(raw)
     buy_sell = side if re.search(r"\b(?:BUY|SELL)\b", raw) else None
@@ -783,6 +792,7 @@ async def plan_fast_entry(
     age_seconds: float | None = None,
     catchup: bool = False,
     stale: bool | None = None,
+    source_chat_id: int | None = None,
 ) -> FastPlan | FastSkip | None:
     """Plan the single broker call, or a skip the later agent must not undo.
 
@@ -792,7 +802,7 @@ async def plan_fast_entry(
     the post says now or the quote is still inside the band. A far quote returns a
     skip, never ``place_pending``. Candles are not read.
     """
-    read = read_post(text)
+    read = read_post(text, source_chat_id=source_chat_id)
     if read.ambiguous:
         log.info("fast_entry_skip reason=ambiguous_side signal_ref=%s", signal_ref)
         return None

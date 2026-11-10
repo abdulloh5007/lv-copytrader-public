@@ -43,7 +43,7 @@ from sqlalchemy import select
 from app.ai.fast_entry import market_distance_limit, read_post
 from app.config import settings
 from app.db import session_scope
-from app.models import Message
+from app.models import Message, Source
 from app.trading import guards
 from app.trading.quote_cache import QUOTE_CACHE_FRESH_SECONDS, CachedQuote, fresh_quote
 from app.util.logging import get_logger
@@ -90,6 +90,7 @@ class ChainAnchor:
     side: str | None
     defined_entry: bool
     message_id: int | None
+    strict_zone: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,9 +183,9 @@ def _age_seconds(posted_at: datetime | None, now: float) -> float | None:
     return max(0.0, float(now) - stamp.replace(tzinfo=timezone.utc).timestamp())
 
 
-def _printed(text: str) -> tuple[float | None, tuple[float, float] | None, str | None]:
+def _printed(text: str, *, source_chat_id: int | None = None) -> tuple[float | None, tuple[float, float] | None, str | None]:
     """Entry or zone from one post. An ambiguous side does not define an entry."""
-    read = read_post(text or "")
+    read = read_post(text or "", source_chat_id=source_chat_id)
     if read.ambiguous:
         return None, None, None
     if read.entry is None and read.zone is None:
@@ -244,6 +245,10 @@ async def load_chain_anchor(
         return None
 
     source_id = int(row.source_id)
+    source = await session.get(Source, source_id)
+    source_chat_id = int(source.chat_id) if source is not None else None
+    from app.ai.xauuad_template import CHANNEL_CHAT_ID
+    strict_zone = source_chat_id == CHANNEL_CHAT_ID
     root = await guards.root_message_id(session, source_id, int(row.message_id))
     ids = await guards.family_message_ids(session, source_id, root)
     result = await session.execute(
@@ -264,7 +269,7 @@ async def load_chain_anchor(
     for message_id, revisions in by_id.items():
         revisions.sort(key=lambda item: (int(item.revision or 0), int(item.id or 0)))
         for revision in revisions:
-            entry, zone, side = _printed(revision.text)
+            entry, zone, side = _printed(revision.text, source_chat_id=source_chat_id)
             if entry is None and zone is None:
                 continue
             posted = _stamp(revision.posted_at)
@@ -283,6 +288,7 @@ async def load_chain_anchor(
             side=side,
             defined_entry=True,
             message_id=message_id,
+            strict_zone=strict_zone,
         )
 
     root_rows = by_id.get(int(root)) or stored
@@ -296,6 +302,7 @@ async def load_chain_anchor(
         side=None,
         defined_entry=False,
         message_id=root_id,
+        strict_zone=strict_zone,
     )
 
 
@@ -614,6 +621,8 @@ async def check_open(
             price_source=source,
         )
 
+    if not anchor.defined_entry and anchor.strict_zone:
+        return _refuse("invalid_channel_entry", "refusing open: this channel post has no verified entry zone")
     if not anchor.defined_entry:
         return OpenGateVerdict(
             allow=True,
@@ -632,6 +641,8 @@ async def check_open(
         now=clock,
         metal_distance=metal_distance,
     )
+    if anchor.strict_zone:
+        limit = 0.0
     label = _entry_label(anchor.entry, anchor.zone)
     if fill is None or distance is None or source == "missing":
         return _refuse(

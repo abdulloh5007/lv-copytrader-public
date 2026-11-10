@@ -41,7 +41,7 @@ export function isMasked(v: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 /** Which vendor dialect the provider speaks. */
-export type ProviderKind = 'anthropic' | 'openai';
+export type ProviderKind = 'anthropic' | 'openai' | 'codex';
 /** Direction of a trade. Never rendered by colour alone (BUILD §11). */
 export type Side = 'buy' | 'sell';
 /** After a ladder cover (1R) closes: trail the runner to BE, or leave the channel stop. */

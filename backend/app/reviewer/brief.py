@@ -1,18 +1,21 @@
 """The only channel-brief reader the copytrader and triage paths may use.
 
 :func:`load_active_brief` opens one file: ``<DATA_DIR>/channel-briefs/active/brief.md``.
-It does not list directories, does not follow a symlink out of that file, and raises
+With a chat ID it also checks the active source marker. It does not list directories,
+does not follow a symlink out of the active files, and raises
 rather than returning anything that lives under ``backups/`` or ``reviewer/``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from app.reviewer.layout import (
     ACTIVE_DIR,
     BRIEF_FILE,
     HIDDEN_FROM_COPYTRADER,
+    IDENTITY_FILE,
     ROOT_DIR,
 )
 
@@ -40,7 +43,7 @@ def assert_copytrader_readable(path: Path, data_dir: str | Path) -> Path:
     return resolved
 
 
-def load_active_brief(data_dir: str | Path) -> str:
+def load_active_brief(data_dir: str | Path, *, chat_id: int | None = None) -> str:
     """Return the active channel playbook, or ``""`` when this channel has none yet.
 
     An empty string means triage keeps today's prompt. A missing file is that case,
@@ -55,6 +58,20 @@ def load_active_brief(data_dir: str | Path) -> str:
     if not path.is_file():
         return ""
     try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
+        marker = active_brief_path(data_dir).parent / IDENTITY_FILE
+        # Resolve and confine the marker too; it is not allowed to point into an archive.
+        if chat_id is not None:
+            expected = marker.parent.resolve() / IDENTITY_FILE
+            if marker.resolve() != expected:
+                return ""
+            before = json.loads(marker.read_text(encoding="utf-8"))
+            if int(before.get("chat_id")) != int(chat_id) or not before.get("generation"):
+                return ""
+        content = path.read_text(encoding="utf-8")
+        if chat_id is not None:
+            after = json.loads(marker.read_text(encoding="utf-8"))
+            if before != after:
+                return ""
+        return content
+    except (OSError, ValueError, TypeError, AttributeError, json.JSONDecodeError):
         return ""

@@ -70,7 +70,7 @@ function newHeaderRow(name = '', value = ''): HeaderRow {
 
 function providerForm(provider: ProviderSettingsOut): ProviderForm {
   return {
-    kind: provider.kind === 'anthropic' ? 'anthropic' : 'openai',
+    kind: provider.kind === 'codex' ? 'codex' : provider.kind === 'anthropic' ? 'anthropic' : 'openai',
     baseUrl: provider.base_url ?? '',
     apiKey: null,
     model: provider.model ?? '',
@@ -290,11 +290,16 @@ export function ProviderSection(props: SectionCommonProps): ReactElement {
         options={[
           { value: 'anthropic', label: t('settings.anthropic') },
           { value: 'openai', label: t('settings.openai_compatible') },
+          { value: 'codex', label: 'Codex' },
         ]}
-        onChange={(value) => patch({ kind: value })}
+        onChange={(value) => {
+          setCapabilities(null);
+          setModels([]);
+          patch(value === 'codex' ? { kind: value, model: 'gpt-6.1-terra' } : { kind: value });
+        }}
       />
 
-      <div style={GRID}>
+      {form.kind !== 'codex' ? <div style={GRID}>
         <TextField
           id={`${uid}-base-url`}
           label={t('settings.base_url')}
@@ -330,13 +335,12 @@ export function ProviderSection(props: SectionCommonProps): ReactElement {
           error={errors.max_tokens ?? null}
           onChange={(value) => patch({ maxTokens: value })}
         />
-      </div>
+      </div> : null}
 
-      {/* §4.4 — one calm sentence, not an error and not a warning box. */}
-      <p style={CALM_NOTE}>{t('settings.subscription_note')}</p>
+      <p style={CALM_NOTE}>{t(form.kind === 'codex' ? 'settings.codex_note' : 'settings.subscription_note')}</p>
 
       {/* ── extra headers: what makes a self-hosted gateway work (§4.2) ──── */}
-      <fieldset style={FIELDSET}>
+      {form.kind !== 'codex' ? <fieldset style={FIELDSET}>
         <legend style={LEGEND}>{t('settings.extra_headers')}</legend>
         {form.headers.map((row) => (
           <div className="row row--wrap row--top" key={row.id}>
@@ -405,7 +409,7 @@ export function ProviderSection(props: SectionCommonProps): ReactElement {
             {t('settings.add_header')}
           </button>
         </div>
-      </fieldset>
+      </fieldset> : null}
 
       {test.error ? (
         <p className="field__error" role="alert">
