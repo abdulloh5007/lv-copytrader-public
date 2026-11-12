@@ -13,6 +13,24 @@ def test_observed_abbreviated_buy_targets_cross_hundred():
     assert post.sl is None
 
 
+def test_observed_uzbek_personal_entry_forms_use_the_same_zone_and_target_rules():
+    from app.ai.uz_gold_zone import entry_identity
+    sell = parse_uz_gold_post('07-11 selldaman', quote=4007.2)
+    assert (sell.kind, sell.side, sell.zone, sell.targets) == ('entry', 'sell', (4007, 4011), ())
+    assert entry_identity('07-11 selldaman') == ('sell', '07', '11')
+    buy = parse_uz_gold_post('Gold buydaman 4115-10kirsangiz boladi\n\nTP 4135\nTP 4155', quote=4112)
+    assert (buy.kind, buy.side, buy.zone, buy.targets) == ('entry', 'buy', (4110, 4115), (4135, 4155))
+    assert entry_identity('Gold buydaman 4115-10kirsangiz boladi\nTP 4135\nTP 4155') == ('buy', '4115', '10')
+
+
+def test_uzbek_personal_entry_does_not_match_questions_negations_or_other_instruments():
+    from app.ai.uz_gold_zone import entry_identity
+    for text in ('07-11 selldamanmi?', '07-11 selldaman emas', 'BTC 07-11 selldaman',
+                 'avval 07-11 selldaman', '07-11 selldaman yopdim'):
+        assert entry_identity(text) is None
+        assert parse_uz_gold_post(text, quote=4007).kind != 'entry'
+
+
 def test_observed_full_and_mixed_abbreviated_zones():
     assert parse_uz_gold_post('3800-805 sell zone TP 3780 TP 3760', quote=3803).zone == (3800,3805)
     assert parse_uz_gold_post('4290-295sell zone TP 4265 TP 4245', quote=4291).zone == (4290,4295)
@@ -38,6 +56,23 @@ def test_management_messages_do_not_become_new_entries():
     assert parse_uz_gold_post('Yoping buylarni', quote=4130).action == 'close_request'
     assert parse_uz_gold_post('09-14 reentry 20sl zone', quote=4130).action == 'reentry_request'
     assert parse_uz_gold_post('450pips 2-TP✅', quote=4130).kind == 'ignored'
+
+
+def test_market_now_is_unambiguous_and_does_not_invent_a_zone():
+    from app.ai.uz_gold_zone import entry_identity
+    for text, side in [('Gold sell now', 'sell'), ('buy now', 'buy'), ('XAUUSD BUY NOW!', 'buy')]:
+        post = parse_uz_gold_post(text, quote=None)
+        assert (post.kind, post.side, post.zone, post.action) == ('entry', side, None, 'market_now')
+        assert entry_identity(text) == (side, None, None)
+    for text in ['do not sell now', 'BTC sell now', 'sell now or buy now', 'sell later',
+                 'Gold sell now 4040', 'we sold gold now']:
+        assert entry_identity(text) is None
+
+
+def test_market_now_followup_targets_use_actual_entry_as_reference():
+    post = parse_uz_gold_post('Gold sell now\nTP 4025\nTP 4005', quote=4045)
+    assert (post.kind, post.side, post.zone, post.targets) == ('entry', 'sell', None, (4025, 4005))
+    assert parse_uz_gold_post('Gold sell now TP 4050 TP 4060', quote=4045).kind == 'invalid'
 
 
 async def test_research_mode_blocks_open_and_model_writes_even_when_armed(data_dir):
@@ -142,6 +177,43 @@ async def test_direction_edit_disarms_research_source_and_keeps_positions_untouc
     assert await runtime.armed()
     edited = await ingestor.handle_message(text_message(42, '68-64 sell zone', chat_id=chat_id, edit_date=datetime.now(timezone.utc)), edited=True)
     assert edited is not None and not await runtime.armed()
+
+
+async def test_market_now_adding_zone_keeps_armed_but_direction_flip_disarms(data_dir):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_ingest import _build, text_message
+    chat_id = -1005555555555
+    ingestor, runtime, source_id = await _build(data_dir)
+    async with session_scope() as session:
+        source = await session.get(Source, source_id)
+        source.chat_id = chat_id
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+    await runtime.set_armed(True)
+    await ingestor.handle_message(text_message(46, 'Gold sell now', chat_id=chat_id))
+    await ingestor.handle_message(text_message(46, 'Gold sell now 4045-50 TP 4025 TP 4005',
+                                              chat_id=chat_id, edit_date=datetime.now(timezone.utc)), edited=True)
+    assert await runtime.armed()
+    await ingestor.handle_message(text_message(46, 'Gold buy now 4045-50 TP 4065 TP 4085',
+                                              chat_id=chat_id, edit_date=datetime.now(timezone.utc) + timedelta(seconds=1)), edited=True)
+    assert not await runtime.armed()
+
+
+async def test_deleting_market_now_signal_disarms(data_dir):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_ingest import _build, text_message
+    chat_id = -1005555555555
+    ingestor, runtime, source_id = await _build(data_dir)
+    async with session_scope() as session:
+        source = await session.get(Source, source_id)
+        source.chat_id = chat_id
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+    await runtime.set_armed(True)
+    await ingestor.handle_message(text_message(47, 'Gold sell now', chat_id=chat_id))
+    await ingestor.handle_deleted([47])
+    assert not await runtime.armed()
 
 
 async def test_deleting_new_source_signal_disarms_without_closing_positions(data_dir):

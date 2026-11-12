@@ -738,3 +738,53 @@ async def test_tag_filter_matches_the_tag_without_caring_about_case(data_dir: Pa
     assert rows[44].skip_reason == SKIP_REASON_TAG
     assert rows[45].status == "skipped"
     assert rows[45].skip_reason == SKIP_REASON_TAG
+
+
+async def test_telegram_delivery_timing_distinguishes_arrival_and_ingest_without_text(caplog):
+    import logging
+    import re
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from app.config import settings
+    from app.telegram.client import TelegramService
+
+    received = []
+    class Ingestor:
+        async def handle_message(self, message):
+            await asyncio.sleep(0.05)
+            received.append(message.id)
+
+    service = TelegramService(lambda: SimpleNamespace(ingestor=Ingestor()), settings)
+    service._active_chat_id = -100123
+    message = SimpleNamespace(id=7, grouped_id=None, date=datetime.now(timezone.utc)-timedelta(seconds=52),
+                              text='private channel content')
+    with caplog.at_level(logging.INFO, logger='app.telegram.client'):
+        await service._handle_new_message(SimpleNamespace(chat_id=-100123, message=message))
+    assert received == [7]
+    timing = re.search(r'arrival_age_ms=(\d+) ingest_ms=(\d+)', caplog.text)
+    assert timing and 52000 <= int(timing.group(1)) < 55000
+    assert int(timing.group(2)) >= 40
+    assert 'private channel content' not in caplog.text
+
+
+async def test_telegram_edit_timing_records_arrival_without_message_content(caplog):
+    import logging
+    import re
+    from types import SimpleNamespace
+    from app.telegram.client import TelegramService
+
+    received = []
+    class Ingestor:
+        async def handle_message(self, message, *, edited=False):
+            received.append((message.id, edited))
+
+    service = TelegramService(lambda: SimpleNamespace(ingestor=Ingestor()), app_settings)
+    service._active_chat_id = CHAT_ID
+    message = SimpleNamespace(id=8, edit_date=datetime.now(UTC)-timedelta(seconds=2),
+                              text='private channel content')
+    with caplog.at_level(logging.INFO, logger='app.telegram.client'):
+        await service._handle_message_edited(SimpleNamespace(chat_id=CHAT_ID, message=message))
+    assert received == [(8, True)]
+    timing = re.search(r'edit_age_ms=(\d+) ingest_ms=(\d+)', caplog.text)
+    assert timing and 2000 <= int(timing.group(1)) < 5000
+    assert 'private channel content' not in caplog.text

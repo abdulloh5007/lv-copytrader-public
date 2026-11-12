@@ -50,6 +50,7 @@ Genuine errors (an unreadable ``SECRET_KEY``, an unconfigured runtime) still go 
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
@@ -74,6 +75,7 @@ from app.ai.prompts import SYSTEM_PROMPT
 from app.models import Source
 from app.operator_settings import (
     KEY_BE_AFTER_TP1,
+    KEY_PROFIT_TRAILING,
     KEY_ORDER_LOT_SIZE,
     KEY_ORDERS_PER_SIGNAL,
     KEY_REVIEWER_ENABLED,
@@ -84,9 +86,12 @@ from app.operator_settings import (
     KEY_TAG_FILTER_TAG,
     ORDER_LOT_SIZE_DEFAULT,
     ORDERS_PER_SIGNAL_DEFAULT,
+    PROFIT_TRAILING_STEP_DEFAULT,
+    PROFIT_TRAILING_DISTANCE_DEFAULT,
     TAG_FILTER_TAG_DEFAULT,
     be_after_tp1_enabled,
     max_entry_drift_usd,
+    profit_trailing_config,
     reviewer_enabled,
     tag_filter_enabled,
     use_fixed_order_lots,
@@ -564,6 +569,13 @@ async def _general_section(session: AsyncSession, runtime: Runtime) -> GeneralSe
     if not isinstance(stored_prompt, str):
         stored_prompt = ""
     custom = _stored_prompt_is_custom(stored_prompt)
+    trailing = await profit_trailing_config(session)
+    trail_step = _as_float(trailing.get("step"))
+    trail_distance = _as_float(trailing.get("distance"))
+    if trail_step is None or not 0 < trail_step <= 1000:
+        trail_step = PROFIT_TRAILING_STEP_DEFAULT
+    if trail_distance is None or not 0 < trail_distance <= 1000:
+        trail_distance = PROFIT_TRAILING_DISTANCE_DEFAULT
     tag = _as_text(await get_setting(session, KEY_TAG_FILTER_TAG, TAG_FILTER_TAG_DEFAULT)).strip()
     stats_out: LadderStatsOut | None = None
     try:
@@ -580,6 +592,9 @@ async def _general_section(session: AsyncSession, runtime: Runtime) -> GeneralSe
         use_fixed_order_lots=await use_fixed_order_lots(session),
         max_entry_drift_usd=await max_entry_drift_usd(session),
         be_after_tp1=await be_after_tp1_enabled(session),
+        profit_trailing_enabled=trailing.get("enabled") is True,
+        profit_trailing_step=trail_step,
+        profit_trailing_distance=trail_distance,
         reviewer_enabled=await reviewer_enabled(session),
         tag_filter_enabled=await tag_filter_enabled(session),
         tag_filter_tag=tag,
@@ -1347,6 +1362,29 @@ async def put_general(
         await set_setting(session, KEY_USE_FIXED_ORDER_LOTS, bool(body.use_fixed_order_lots))
         await set_setting(session, KEY_MAX_ENTRY_DRIFT_USD, float(body.max_entry_drift_usd))
         await set_setting(session, KEY_BE_AFTER_TP1, bool(body.be_after_tp1))
+        if any(value is not None for value in (body.profit_trailing_enabled,
+                                                body.profit_trailing_step,
+                                                body.profit_trailing_distance)):
+            old = await profit_trailing_config(session)
+            old_enabled = old.get("enabled") is True
+            enabled = old_enabled if body.profit_trailing_enabled is None else body.profit_trailing_enabled
+            old_step = _as_float(old.get("step"))
+            old_distance = _as_float(old.get("distance"))
+            step = body.profit_trailing_step if body.profit_trailing_step is not None else old_step
+            distance = body.profit_trailing_distance if body.profit_trailing_distance is not None else old_distance
+            step = step if step is not None and 0 < step <= 1000 else PROFIT_TRAILING_STEP_DEFAULT
+            distance = distance if distance is not None and 0 < distance <= 1000 else PROFIT_TRAILING_DISTANCE_DEFAULT
+            old_start = _as_float(old.get("start_ts"))
+            keep_start = enabled and old_enabled and not old.get("legacy") and old_start is not None and old_start > 0
+            policy: dict[str, Any] = {"enabled": enabled, "step": step, "distance": distance,
+                                      "start_ts": old_start if keep_start else (time.time() if enabled else 0)}
+            if enabled and old_enabled:
+                legacy_start = _as_float(old.get("start_ts") if old.get("legacy") else old.get("legacy_start_ts"))
+                legacy_source = old.get("source_id") if old.get("legacy") else old.get("legacy_source_id")
+                if legacy_start is not None and legacy_start > 0 and isinstance(legacy_source, int) and legacy_source > 0:
+                    policy.update(legacy_start_ts=legacy_start, legacy_source_id=legacy_source)
+            await set_setting(session, KEY_PROFIT_TRAILING, policy)
+            written.append(KEY_PROFIT_TRAILING)
         await set_setting(session, KEY_REVIEWER_ENABLED, bool(body.reviewer_enabled))
         await set_setting(session, KEY_TAG_FILTER_ENABLED, bool(body.tag_filter_enabled))
         await set_setting(session, KEY_TAG_FILTER_TAG, body.tag_filter_tag.strip())

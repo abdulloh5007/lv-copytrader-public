@@ -602,3 +602,56 @@ async def test_codex_provider_settings_and_probe_are_available(client, monkeypat
     probed = await client.post('/api/provider/probe', json={'kind': 'codex', 'base_url': '', 'model': 'gpt-6.1-terra'})
     assert probed.status_code == 200, probed.text
     assert probed.json()['supports_tools'] is True
+
+
+async def test_profit_trailing_settings_are_opt_in_and_old_clients_do_not_reset_them(client):
+    from app.db import get_setting, session_scope
+    base = {'default_risk_percent': 1, 'ladder_volume': 0.1}
+    general = (await client.get('/api/settings')).json()['general']
+    assert general['profit_trailing_enabled'] is False
+    assert general['profit_trailing_step'] == 2
+    assert general['profit_trailing_distance'] == 5
+    response = await client.put('/api/settings/general', json={**base, 'profit_trailing_enabled': True,
+                                'profit_trailing_step': 0.0002, 'profit_trailing_distance': 0.0005})
+    assert response.status_code == 200, response.text
+    async with session_scope() as s:
+        cfg = await get_setting(s, 'trading.profit_trailing')
+    assert cfg['enabled'] and cfg['start_ts'] > 0
+    start = cfg['start_ts']
+    response = await client.put('/api/settings/general', json=base)
+    assert response.status_code == 200
+    assert response.json()['general']['profit_trailing_enabled'] is True
+    async with session_scope() as s:
+        assert (await get_setting(s, 'trading.profit_trailing'))['start_ts'] == start
+    bad = await client.put('/api/settings/general', json={**base, 'profit_trailing_step': 0})
+    assert bad.status_code == 422
+    response = await client.put('/api/settings/general', json={**base, 'profit_trailing_enabled': False})
+    assert response.status_code == 200 and response.json()['general']['profit_trailing_enabled'] is False
+    response = await client.put('/api/settings/general', json={**base, 'profit_trailing_enabled': True})
+    assert response.status_code == 200
+    async with session_scope() as s:
+        cfg = await get_setting(s, 'trading.profit_trailing')
+        assert cfg['start_ts'] > start
+        assert 'legacy_start_ts' not in cfg
+
+
+async def test_profit_trailing_preserves_legacy_owner_cohort_when_promoted_to_global(client):
+    import time
+    from app.db import get_setting, session_scope, set_setting
+    legacy_start = time.time() - 120
+    async with session_scope() as s:
+        await set_setting(s, 'trading.uz_gold_trailing', {'enabled': True, 'step': 2, 'distance': 5,
+                                                          'start_ts': legacy_start, 'source_id': 17})
+    general = (await client.get('/api/settings')).json()['general']
+    assert general['profit_trailing_enabled'] is True
+    base = {'default_risk_percent': 1, 'ladder_volume': 0.1}
+    assert (await client.put('/api/settings/general', json=base)).status_code == 200
+    async with session_scope() as s:
+        assert await get_setting(s, 'trading.profit_trailing') is None
+    response = await client.put('/api/settings/general', json={**base, 'profit_trailing_enabled': True,
+                                'profit_trailing_step': 2, 'profit_trailing_distance': 5})
+    assert response.status_code == 200, response.text
+    async with session_scope() as s:
+        cfg = await get_setting(s, 'trading.profit_trailing')
+    assert cfg['enabled'] and cfg['start_ts'] > legacy_start
+    assert cfg['legacy_start_ts'] == legacy_start and cfg['legacy_source_id'] == 17

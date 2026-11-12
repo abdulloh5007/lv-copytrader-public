@@ -810,6 +810,11 @@ export const en = {
   'settings.be_after_tp1': 'Breakeven after TP1',
   'settings.be_after_tp1_hint':
     'When the first take-profit of a multi-order signal fills, move the remaining stops to breakeven. A model that chooses hold, or that already moved a stop, is left alone.',
+  'settings.profit_trailing': 'Trail profit after TP1',
+  'settings.profit_trailing_hint': 'For new tracked classic two-order signals. After broker-confirmed TP1 and breakeven, TP2 is removed and the remaining stop follows the price. Values use the instrument’s price units. The app must be online. Turning this off stops trailing but does not restore a removed TP.',
+  'settings.profit_trailing_step': 'Stop movement step, price units',
+  'settings.profit_trailing_distance': 'Stop distance from price, price units',
+  'settings.trailing_range': 'Enter a number greater than 0 and no more than 1000.',
   'settings.reviewer_enabled': 'Channel reviewer',
   'settings.reviewer_hint':
     'When off, no playbook is generated for the active channel. Default off.',

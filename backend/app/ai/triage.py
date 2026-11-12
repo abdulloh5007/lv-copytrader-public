@@ -33,7 +33,9 @@ TRIAGE_TEXT_CHARS: int = 4000
 TRIAGE_SYSTEM: str = (
     "You classify one Telegram post for a trading desk. Reply with exactly one word: yes or no.\n"
     "yes — the post is a trading signal or an actionable trade instruction: a new entry "
-    "(even when the stop or the targets are missing), a pending order, a stop or take-profit "
+    "(even when the stop or the targets are missing; 'gold sell now' and 'gold buy now' "
+    "are immediate entries; Uzbek '07-11 selldaman' and 'buydaman 4115-10 kirsangiz boladi' "
+    "can express a direction and entry zone), a pending order, a stop or take-profit "
     "update, a close, a partial, or any instruction that should change a position.\n"
     "no — the post does not ask for a trade action: celebration, commentary, greeting, a "
     "target-hit note that does not change a position, or anything else that should be ignored.\n"

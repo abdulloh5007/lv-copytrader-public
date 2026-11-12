@@ -34,6 +34,8 @@ from app.operator_settings import (
     ORDERS_PER_SIGNAL_DEFAULT,
     ORDERS_PER_SIGNAL_MAX,
     MAX_ENTRY_DRIFT_USD_DEFAULT,
+    PROFIT_TRAILING_STEP_DEFAULT,
+    PROFIT_TRAILING_DISTANCE_DEFAULT,
     USE_FIXED_ORDER_LOTS_DEFAULT,
     REVIEWER_ENABLED_DEFAULT,
     SYSTEM_PROMPT_MAX_LENGTH,
@@ -517,6 +519,12 @@ class GeneralSettings(RequestModel):
             "after TP1 fills, unless the model chose hold_channel_sl or already changed a stop."
         ),
     )
+    profit_trailing_enabled: bool | None = Field(
+        default=None,
+        description="Opt in for new tracked classic two-leg signals; TP2 is removed after verified TP1 and break-even.",
+    )
+    profit_trailing_step: float | None = Field(default=None, gt=0, le=1000, allow_inf_nan=False)
+    profit_trailing_distance: float | None = Field(default=None, gt=0, le=1000, allow_inf_nan=False)
     reviewer_enabled: bool = Field(
         default=REVIEWER_ENABLED_DEFAULT,
         description="When false, the channel reviewer does not generate a playbook.",
@@ -732,6 +740,9 @@ class GeneralSettingsOut(OutModel):
     use_fixed_order_lots: bool = USE_FIXED_ORDER_LOTS_DEFAULT
     max_entry_drift_usd: float = MAX_ENTRY_DRIFT_USD_DEFAULT
     be_after_tp1: bool = BE_AFTER_TP1_DEFAULT
+    profit_trailing_enabled: bool = False
+    profit_trailing_step: float = PROFIT_TRAILING_STEP_DEFAULT
+    profit_trailing_distance: float = PROFIT_TRAILING_DISTANCE_DEFAULT
     reviewer_enabled: bool = REVIEWER_ENABLED_DEFAULT
     tag_filter_enabled: bool = TAG_FILTER_ENABLED_DEFAULT
     tag_filter_tag: str = TAG_FILTER_TAG_DEFAULT

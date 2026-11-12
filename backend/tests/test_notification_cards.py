@@ -148,6 +148,131 @@ async def _record(*a, **kw):
     pass
 
 
+async def test_skipped_signal_sends_one_localized_widget_without_duplicate_caption():
+    n = notifier(); requests = []
+    def handler(request):
+        requests.append((request.url.path.rsplit('/', 1)[-1], json.loads(request.content)))
+        return httpx.Response(200, json={'ok': True, 'result': {'message_id': 1}})
+    n._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n._load_config = _config; n._record = _record
+    try:
+        body = n.render_skipped(post='3995-4000 sell zone', signal_ref='SIG:1:7',
+                                reason='gold channel entry refused: quote_outside_entry_zone')
+        assert await n.send('attention', body)
+        assert len(requests) == 1 and requests[0][0] == 'sendWidget'
+        widget = requests[0][1]
+        assert 'СИГНАЛ ПРОПУЩЕН' in widget['html'] and 'Цена была вне' in widget['html']
+        assert '3995-4000 sell zone' in widget['html'] and 'caption' not in widget
+    finally:
+        await n.stop()
+
+
+@pytest.mark.parametrize('case', ['outside_zone', 'ai_no', 'noise'])
+async def test_only_skipped_entry_not_noise_sends_one_status(data_dir, case):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    ex, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy',
+                          {'enabled': True, 'total_lots': 0.2, 'stop_distance': 15.0})
+    n = notifier(); sent = []
+    n.fire = lambda *a, **kw: sent.append((a, kw))
+    runtime.notifier = n
+    provider = _ScriptedProvider('no' if case == 'ai_no' else 'yes')
+    _install_provider(runtime, provider)
+    text = 'Good morning' if case == 'noise' else '84-86 buy zone'
+    _, row_id = await _seed(text, message_id=7010)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'ignored' and not broker.positions
+    if case == 'noise':
+        assert not sent and not provider.calls
+    else:
+        assert len(sent) == 1 and sent[0][0][0] == 'attention'
+        body = sent[0][0][1]
+        assert 'СИГНАЛ ПРОПУЩЕН' in body and text in body
+        assert ('ИИ не подтвердил' if case == 'ai_no' else 'Цена была вне') in body
+
+
+async def test_unknown_broker_outcome_is_error_not_a_skipped_signal(data_dir):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    ex, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy',
+                          {'enabled': True, 'total_lots': 0.2, 'stop_distance': 15.0})
+    n = notifier(); sent = []
+    n.fire = lambda *a, **kw: sent.append((a, kw))
+    runtime.notifier = n
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    _, row_id = await _seed('81-78 buy zone', message_id=7011)
+    async def unknown(request): return None
+    ex.rpc.order_send = unknown
+    result = await _drive(runtime, provider, row_id)
+    assert result['status'] == 'error' and not await runtime.armed()
+    assert not any('СИГНАЛ ПРОПУЩЕН' in args[1] for args, _ in sent)
+    assert any('ОШИБКА' in args[1] for args, _ in sent)
+
+
+@pytest.mark.parametrize('text', ['81-78 buy zone TP 84 TP 87', '81-78 buy zone'])
+async def test_first_seen_edit_is_evaluated_as_new_signal(data_dir, text):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider
+    ex, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        source = Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True)
+        session.add(source); await session.flush()
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy',
+                          {'enabled': True, 'total_lots': 0.2, 'stop_distance': 15.0})
+        edit = Message(source_id=source.id, message_id=7012, revision=1, edit_date=int(now.timestamp()),
+                       kind='text', status='pending', text=text, posted_at=now)
+        session.add(edit); await session.flush(); row_id = edit.id
+    n = notifier(); sent = []
+    n.fire = lambda *a, **kw: sent.append((a, kw))
+    runtime.notifier = n
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'acted', result
+    assert len(broker.positions) == 2 and len(provider.calls) == 3
+    assert all(p['volume'] == 0.1 and p['sl'] > 0 for p in broker.positions.values())
+    assert len(sent) == 1 and 'ВХОД' in sent[0][0][1]
+
+
+async def test_edit_with_recorded_original_does_not_repeat_skip_notice(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_fast_entry import _drive, _ScriptedProvider, _seed
+    ex, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555; now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy',
+                          {'enabled': True, 'total_lots': 0.2, 'stop_distance': 15.0})
+    source_id, _ = await _seed('81-78 buy zone', message_id=7013, posted_at=now)
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=7013, revision=2, edit_date=1,
+                       kind='text', status='pending', text='81-78 buy zone TP 84 TP 87', posted_at=now)
+        session.add(edit); await session.flush(); row_id = edit.id
+    n = notifier(); sent = []; n.fire = lambda *a, **kw: sent.append((a, kw))
+    runtime.notifier = n
+    result = await _drive(runtime, _ScriptedProvider('yes'), row_id)
+    assert result['decision'] == 'ignored' and not broker.positions and not sent
+
+
 @pytest.mark.parametrize("be_enabled", [True, False])
 async def test_live_tp_card_reports_actual_remaining_protection(data_dir, be_enabled):
     from app.db import session_scope, set_setting

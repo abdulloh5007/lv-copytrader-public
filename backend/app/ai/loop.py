@@ -327,6 +327,8 @@ class _AgentRun:
         self.kind = (kind or "signal").strip() or "signal"
         self.instruction = instruction
         self.uz_gold_live = False
+        self.gold_entry_post: str | None = None
+        self.gold_entry_link: str | None = None
         self.watchdog_ticket = watchdog_ticket
         self.message_row_id = message_row_id
 
@@ -1288,6 +1290,15 @@ class _AgentRun:
         self.decision = decision
         self.summary = summary
         self.error = error
+        if status == STATUS_FINISHED and decision == "ignored" and self.gold_entry_post is not None:
+            notifier = getattr(self.runtime, "notifier", None)
+            if notifier is not None:
+                try:
+                    text = notifier.render_skipped(post=self.gold_entry_post, signal_ref=self.signal_ref,
+                                                   reason=redact(str(summary or "")))
+                    notifier.fire("attention", text, link=self.gold_entry_link)
+                except Exception as exc:
+                    log.warning("notify_skipped_signal_failed error=%s", type(exc).__name__)
         if status == STATUS_ERROR and error:
             notifier = getattr(self.runtime, "notifier", None)
             if notifier is not None:
@@ -1730,7 +1741,22 @@ class _AgentRun:
                       "Trading was disabled; inspect the signal and open positions.")
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_manual_review", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
-        is_targets = bool(row.edit_date or row.reply_to_message_id) and target_count(text) == 2
+        identity = entry_identity(text)
+        first_observed_edit = False
+        if row.edit_date and not row.reply_to_message_id and not row.catchup and identity is not None:
+            # A first observed edit may be the first delivery of a new signal.
+            # The executor independently checks history, age and broker exposure.
+            async with session_scope() as session:
+                earlier_id = (await session.execute(select(Message.id).where(
+                    Message.source_id == row.source_id, Message.message_id == row.message_id,
+                    Message.id < row.id
+                ).limit(1))).scalar_one_or_none()
+                live_trades = await guards.live_chain_trades(session, row.signal_ref)
+            first_observed_edit = earlier_id is None and not live_trades
+            if first_observed_edit:
+                from dataclasses import replace
+                ctx = replace(ctx, first_observed_edit=True)
+        is_targets = not first_observed_edit and bool(row.edit_date or row.reply_to_message_id) and target_count(text) == 2
         if is_be or is_targets:
             result = await self.runtime.executor.update_uz_gold_signal(ctx)
             await self._add_step("tool_result", name="gold_channel_update", payload={"result": result},
@@ -1739,14 +1765,16 @@ class _AgentRun:
                 self.write_calls += 1
                 return await self._finalize(STATUS_FINISHED, decision="acted", summary=str(result.get("message") or ""))
             reason = str(result.get("message") or "channel update was not applied")
-            if "no live positions match" in reason:
+            if result.get("code") == "superseded_no_exposure" or "no live positions match" in reason:
                 return await self._finalize(STATUS_FINISHED, decision="ignored", summary=reason)
             await self.runtime.set_armed(False)
             reason += " Automatic trading was disabled; inspect the channel and positions."
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_update_failed", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
-        if row.edit_date or row.reply_to_message_id or entry_identity(text) is None:
+        if (row.edit_date and not first_observed_edit) or row.reply_to_message_id or identity is None:
             return await self._finalize(STATUS_FINISHED, decision="ignored", summary="No new verified entry.")
+        self.gold_entry_post = text
+        self.gold_entry_link = row.permalink
         refusal = await self._resolve_provider()
         if refusal is not None:
             return await self._finalize(STATUS_ERROR, error=refusal)
@@ -1769,7 +1797,7 @@ class _AgentRun:
         if (isinstance(wait_seconds, bool) or not isinstance(wait_seconds, (int, float))
                 or not 0 <= wait_seconds <= 900 or (wait_seconds and wait_seconds < 60)):
             return await self._finalize(STATUS_ERROR, error="invalid gold channel wait policy")
-        if wait_seconds:
+        if wait_seconds and identity[1] is not None:
             stamp = row.posted_at
             if stamp is None:
                 return await self._finalize(STATUS_ERROR, error="signal timestamp is missing")
@@ -1792,6 +1820,10 @@ class _AgentRun:
         self.write_calls += 1
         await self._add_step("tool_result", name="gold_channel_entry", payload={"result": result},
                              ok=bool(result.get("ok")))
+        if result.get("safety_failures"):
+            await self.runtime.set_armed(False)
+            reason = "Order outcome or protection could not be verified; automatic trading is disabled. Check positions."
+            return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         if result.get("ok") and not result.get("failures") and not result.get("partial_fill") and not result.get("safety_failures"):
             return await self._finalize(STATUS_FINISHED, decision="acted", summary=str(result.get("message") or ""))
         if result.get("ok") or result.get("partial_fill"):
@@ -1800,6 +1832,9 @@ class _AgentRun:
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_partial", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         reason = str(result.get("message") or "gold channel entry was refused")
+        if result.get("failures"):
+            # The executor already sent the broker-rejection card with its retcode.
+            self.gold_entry_post = None
         return await self._finalize(STATUS_FINISHED, decision="ignored", summary=reason)
 
     async def _channel_followup(self, row: Message | None) -> dict[str, Any] | None:

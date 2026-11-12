@@ -25,6 +25,7 @@ hit, and what happened to the remaining positions.
 | MT5 execution | Opens market/pending orders and manages SL, TP, changes and closes |
 | Multiple targets | Supports ordinary split entries and ladder cover/runner management |
 | Break even | Can protect remaining positions after the first target, following the selected policy |
+| Profit trailing | Optional stop following for new tracked classic two-order signals after confirmed TP1 and break-even |
 | Clear notifications | One entry card for positions in the same signal run; separate TP, SL, break-even and error states |
 | Recovery | Reconciles positions and history after startup/reconnect |
 | Operator controls | Arm/disarm, configurable limits, trade history and an emergency stop |
@@ -145,7 +146,23 @@ path with additional runtime/image prerequisites; the x86-64 quick start is not 
 
 The actual bot uses native Telegram RichMessage cards, with a classic HTML fallback when the
 API explicitly refuses that method/format. A TP card reports break even only after the stop
-change is confirmed. Live TP/SL checks follow `SL_WATCHDOG_SECONDS` (60 seconds by default).
+change is confirmed. Live TP/SL checks follow `SL_WATCHDOG_SECONDS` (60 seconds by default),
+or approximately five seconds while profit trailing is enabled.
+
+### Optional profit trailing
+
+In **Settings → General**, enable **Trail profit after TP1** and choose a step and distance
+in the instrument's absolute price units. For example, on XAUUSD a step of 2 and distance
+of 5 mean $2 and $5 of gold price movement; the same numbers have a different meaning on
+another instrument. It is off by default and applies to new tracked classic signals split
+into two orders, not ladder-cover strategies. The broker must confirm that the first order
+closed at TP, and the second stop must already be at or beyond break-even. The bot then
+removes the second order's TP and moves its stop only in the profitable direction.
+
+The app must remain online to move the stop; the last accepted SL stays at the broker if
+the app disconnects. A fast move may reach TP2 before it can be removed, and slippage can
+change the exit price. Turning trailing off stops further moves but does not restore a TP
+already removed; changing the step or distance affects runners already being followed.
 
 ## Development
 

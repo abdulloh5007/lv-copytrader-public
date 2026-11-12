@@ -17,6 +17,17 @@ _TARGET = re.compile(r'\bTP\s*[:=]?\s*(\d{1,6}(?:\.\d+)?)\b', re.I)
 _SL_PIPS = re.compile(r'\bSL\s*[:=]?\s*(\d+(?:\.\d+)?)\s*PIPS?\b', re.I)
 _SL = re.compile(r'\bSL\s*[:=]?\s*(\d{3,6}(?:\.\d+)?)\b', re.I)
 _OTHER_SYMBOL = re.compile(r'\b(?:BTC|BTCUSD|ETH|ETHUSD|XAG|XAGUSD|EURUSD|GBPUSD)\b', re.I)
+_MARKET_NOW = re.compile(
+    r'^\s*(?:(?:GOLD|XAUUSD)\s+)?(BUY|SELL|SEL)\s+NOW'
+    r'(?P<levels>(?:\s+TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?){0,2})\s*[.!‼️]*\s*$', re.I
+)
+_UZ_PERSONAL_ENTRY = re.compile(
+    r'^\s*(?:(?:GOLD|XAUUSD)\s+)?(?:'
+    r'(?P<side_first>SELLDAMAN|SELDAMAN|BUYDAMAN)\s*(?P<zone_after>\d{1,5}\s*[-–—]\s*\d{1,5})'
+    r'|(?P<zone_before>\d{1,5}\s*[-–—]\s*\d{1,5})\s*(?P<side_last>SELLDAMAN|SELDAMAN|BUYDAMAN)'
+    r')(?:\s*kirsangiz\s+bo[\'‘’]?ladi)?'
+    r'(?P<levels>(?:\s+TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?){0,2})\s*[.!‼️✅]*\s*$', re.I
+)
 
 
 @dataclass(frozen=True)
@@ -71,11 +82,20 @@ def target_count(text: str) -> int:
     return len(_TARGET.findall(text or ""))
 
 
-def entry_identity(text: str) -> tuple[str, str, str] | None:
+def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
     """Extract direction and printed zone for edit-conflict checks without guessing prices."""
     text = text or ""
     if re.search(r'\bb\s*/\s*u\b|bezubit|bezub|\byop|\bre\s*-?\s*entry\b|\brentery\b', text, re.I):
         return None
+    market = _MARKET_NOW.fullmatch(text)
+    if market:
+        return ("buy" if market.group(1).lower() == "buy" else "sell", None, None)
+    personal = _UZ_PERSONAL_ENTRY.fullmatch(text)
+    if personal:
+        side = personal.group('side_first') or personal.group('side_last')
+        zone = _RANGE.search(personal.group('zone_after') or personal.group('zone_before'))
+        assert zone is not None
+        return ('buy' if side.lower().startswith('buy') else 'sell', zone.group(1), zone.group(2))
     sides, zones = list(_SIDE.finditer(text)), list(_RANGE.finditer(text))
     if len(sides) != 1 or len(zones) != 1 or _OTHER_SYMBOL.search(text):
         return None
@@ -93,6 +113,30 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
         return GoldZonePost('management', action='close_request')
     if re.search(r'\bre\s*-?\s*entry\b|\brentery\b', lower):
         return GoldZonePost('management', action='reentry_request')
+    personal = _UZ_PERSONAL_ENTRY.fullmatch(text)
+    if personal:
+        side = personal.group('side_first') or personal.group('side_last')
+        zone = personal.group('zone_after') or personal.group('zone_before')
+        # Reuse the same price, target and contradiction checks as explicit
+        # buy/sell zone posts; no prices are inferred without a fresh quote.
+        normalized = f"{zone} {'buy' if side.lower().startswith('buy') else 'sell'}{personal.group('levels')}"
+        return parse_uz_gold_post(normalized, quote=quote)
+    market = _MARKET_NOW.fullmatch(text)
+    if market:
+        side = 'buy' if market.group(1).lower() == 'buy' else 'sell'
+        raw_targets = _TARGET.findall(market.group('levels'))
+        if not raw_targets:
+            return GoldZonePost('entry', side=side, action='market_now')
+        if isinstance(quote, bool) or not isinstance(quote, (int, float)) or not math.isfinite(quote) or not 100 <= quote <= 10000:
+            return GoldZonePost('invalid', side=side, reason='missing_or_invalid_gold_quote')
+        reference = (float(quote), float(quote))
+        targets: list[float] = []
+        for raw in raw_targets:
+            target = _target(raw, reference, side, targets[-1] if targets else None)
+            if target is None:
+                return GoldZonePost('invalid', side=side, reason='ambiguous_or_contradictory_target')
+            targets.append(target)
+        return GoldZonePost('entry', side=side, targets=tuple(targets), action='market_now')
     sides = list(_SIDE.finditer(text))
     zones = list(_RANGE.finditer(text))
     if not sides or not zones:

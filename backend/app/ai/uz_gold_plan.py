@@ -55,7 +55,7 @@ def plan_gold_entry(
     post = parse_uz_gold_post(text, quote=(bid + ask) / 2)
     if post.kind in ('ignored', 'management'):
         return GoldEntryPlan('ignore', reason=post.action or 'not_an_entry')
-    if post.kind != 'entry' or post.zone is None or post.side is None:
+    if post.kind != 'entry' or post.side is None or (post.zone is None and post.action != 'market_now'):
         return GoldEntryPlan('reject', reason=post.reason or 'invalid_signal')
     if len(post.targets) not in (0, 2):
         return GoldEntryPlan('reject', reason='requires_zero_or_two_targets')
@@ -64,7 +64,7 @@ def plan_gold_entry(
     if post.targets and ((post.side == 'sell' and bid <= post.targets[0]) or
                          (post.side == 'buy' and ask >= post.targets[0])):
         return GoldEntryPlan('reject', reason='target_reached_before_entry', side=post.side, zone=post.zone)
-    if not post.zone[0] - zone_tolerance <= entry <= post.zone[1] + zone_tolerance:
+    if post.zone is not None and not post.zone[0] - zone_tolerance <= entry <= post.zone[1] + zone_tolerance:
         return GoldEntryPlan('reject', reason='quote_outside_entry_zone', side=post.side, zone=post.zone)
     try:
         total, minimum, maximum, step = map(lambda v: Decimal(str(v)),
@@ -85,7 +85,7 @@ def plan_gold_entry(
 
 
 async def wait_for_gold_entry(attempt, *, wait_seconds: float, sleep=None, monotonic=None):
-    """Retry only a definitive outside-zone refusal; never retry a broker attempt.
+    """Retry safe pre-order price/target changes; never retry a broker attempt.
 
     The caller must revalidate signal, account, quote, limits and arm state on
     each attempt. Cancellation or restart discards the wait; it is not replayed.
@@ -100,9 +100,11 @@ async def wait_for_gold_entry(attempt, *, wait_seconds: float, sleep=None, monot
     monotonic = monotonic or time.monotonic
     deadline = monotonic() + wait_seconds
     result = await attempt()
+    safe_reasons = {'gold channel entry refused: quote_outside_entry_zone',
+                    'gold channel entry refused: targets_changed_before_order'}
     while (result.get('ok') is False
            and result.get('stage') == 'channel_profile'
-           and result.get('message') == 'gold channel entry refused: quote_outside_entry_zone'):
+           and result.get('message') in safe_reasons):
         remaining = deadline - monotonic()
         if remaining <= 0:
             break

@@ -51,6 +51,9 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
   const [beAfterTp1, setBeAfterTp1] = useState<boolean>(
     () => slice.be_after_tp1 !== false,
   );
+  const [trailing, setTrailing] = useState<boolean>(() => Boolean(slice.profit_trailing_enabled));
+  const [trailStep, setTrailStep] = useState<string>(() => String(slice.profit_trailing_step ?? 2));
+  const [trailDistance, setTrailDistance] = useState<string>(() => String(slice.profit_trailing_distance ?? 5));
   const [reviewerEnabled, setReviewerEnabled] = useState<boolean>(() =>
     Boolean(slice.reviewer_enabled),
   );
@@ -67,6 +70,8 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [lotError, setLotError] = useState<string | null>(null);
   const [driftError, setDriftError] = useState<string | null>(null);
+  const [trailStepError, setTrailStepError] = useState<string | null>(null);
+  const [trailDistanceError, setTrailDistanceError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
 
@@ -81,6 +86,9 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
       setFixedLots(slice.use_fixed_order_lots !== false);
       setDrift(String(slice.max_entry_drift_usd ?? 5));
       setBeAfterTp1(slice.be_after_tp1 !== false);
+      setTrailing(Boolean(slice.profit_trailing_enabled));
+      setTrailStep(String(slice.profit_trailing_step ?? 2));
+      setTrailDistance(String(slice.profit_trailing_distance ?? 5));
       setReviewerEnabled(Boolean(slice.reviewer_enabled));
       setTagFilterEnabled(Boolean(slice.tag_filter_enabled));
       setTag(slice.tag_filter_tag ?? '#soft');
@@ -115,6 +123,14 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
         setTagError(errorSentence(cause, t));
         return true;
       }
+      if (field === 'profit_trailing_step') {
+        setTrailStepError(errorSentence(cause, t));
+        return true;
+      }
+      if (field === 'profit_trailing_distance') {
+        setTrailDistanceError(errorSentence(cause, t));
+        return true;
+      }
       return false;
     },
     [t],
@@ -128,6 +144,10 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
       ordersMessage = t('err.orders_range');
     const lotMessage = positiveNumber(lotSize, t, true);
     const driftMessage = positiveNumber(drift, t, true);
+    const trailStepMessage = positiveNumber(trailStep, t, true) ||
+      (toNumber(trailStep) > 1000 ? t('settings.trailing_range') : null);
+    const trailDistanceMessage = positiveNumber(trailDistance, t, true) ||
+      (toNumber(trailDistance) > 1000 ? t('settings.trailing_range') : null);
     const tagMessage =
       tagFilterEnabled && !tag.trim() ? t('settings.tag_required') : null;
     setRiskError(riskMessage);
@@ -135,6 +155,8 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
     setOrdersError(ordersMessage);
     setLotError(lotMessage);
     setDriftError(driftMessage);
+    setTrailStepError(trailStepMessage);
+    setTrailDistanceError(trailDistanceMessage);
     setTagError(tagMessage);
     if (
       riskMessage ||
@@ -142,6 +164,8 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
       ordersMessage ||
       lotMessage ||
       driftMessage ||
+      trailStepMessage ||
+      trailDistanceMessage ||
       tagMessage
     )
       return;
@@ -155,6 +179,9 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
         use_fixed_order_lots: fixedLots,
         max_entry_drift_usd: toNumber(drift),
         be_after_tp1: beAfterTp1,
+        profit_trailing_enabled: trailing,
+        profit_trailing_step: toNumber(trailStep),
+        profit_trailing_distance: toNumber(trailDistance),
         reviewer_enabled: reviewerEnabled,
         tag_filter_enabled: tagFilterEnabled,
         tag_filter_tag: tag.trim(),
@@ -181,6 +208,9 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
     t,
     tag,
     tagFilterEnabled,
+    trailing,
+    trailStep,
+    trailDistance,
   ]);
 
   /**
@@ -346,6 +376,48 @@ export function GeneralSection(props: SectionCommonProps): ReactElement {
           save.clear();
         }}
       />
+      <ToggleRow
+        id={`${uid}-profit-trailing`}
+        label={t('settings.profit_trailing')}
+        checked={trailing}
+        disabled={save.busy}
+        hint={t('settings.profit_trailing_hint')}
+        onChange={(checked) => {
+          setTrailing(checked);
+          if (!checked) {
+            setTrailStep(String(slice.profit_trailing_step ?? 2));
+            setTrailDistance(String(slice.profit_trailing_distance ?? 5));
+            setTrailStepError(null);
+            setTrailDistanceError(null);
+          }
+          setDirty(true);
+          save.clear();
+        }}
+      />
+      {trailing && (
+        <div style={NARROW}>
+          <TextField
+            id={`${uid}-trail-step`}
+            label={t('settings.profit_trailing_step')}
+            value={trailStep}
+            mono
+            inputMode="decimal"
+            disabled={save.busy}
+            error={trailStepError}
+            onChange={(value) => { setTrailStep(value); setDirty(true); setTrailStepError(null); save.clear(); }}
+          />
+          <TextField
+            id={`${uid}-trail-distance`}
+            label={t('settings.profit_trailing_distance')}
+            value={trailDistance}
+            mono
+            inputMode="decimal"
+            disabled={save.busy}
+            error={trailDistanceError}
+            onChange={(value) => { setTrailDistance(value); setDirty(true); setTrailDistanceError(null); save.clear(); }}
+          />
+        </div>
+      )}
       <ToggleRow
         id={`${uid}-reviewer`}
         label={t('settings.reviewer_enabled')}

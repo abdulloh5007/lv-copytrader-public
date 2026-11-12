@@ -5,6 +5,55 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Gold profit trailing
+
+- Add an opt-in settings control for tracked classic two-order signals across
+  instruments: after a verified TP1 and confirmed break-even stop, remove TP2
+  and tighten the stop in configurable price steps without loosening it.
+- Default the global control to off, explain instrument price units and the
+  effect of disabling it, and retain previously enrolled owner gold positions
+  when moving from the legacy source-specific setting.
+- Check enrolled positions every five seconds and use the last confirmed stop
+  as the restart-safe trailing anchor; leave old trades and other sources alone.
+- Rebuild a waiting gold entry when its targets change during pre-order checks;
+  never retry after a broker order was attempted.
+
+### Missing original signal
+
+- Treat a fresh first-observed edit as a potential new entry when no prior
+  message, trade, broker position or pending order exists; still require the
+  configured AI, source, time, price, stop and broker checks.
+- Check the complete signal trade history to prevent re-entry after a close.
+
+### Signal delivery timing
+
+- Record Telegram arrival age and ingestion duration separately to diagnose
+  late signals without recording message contents or changing trading rules.
+
+### Missed-signal status
+
+- Send one localized skipped-signal notification with the channel post and reason
+  when a recognized entry is not opened; retain separate error notifications.
+- Safely incorporate target-only edits to an unchanged entry zone while the
+  original signal is being evaluated or waiting, without replaying old signals.
+
+### Uzbek channel signals
+
+- Recognize the channel's explicit `selldaman` and `buydaman` entry-zone
+  formats before AI review, retaining source, quote, risk and direction checks.
+
+### Immediate gold market signals
+
+- Recognize unambiguous buy/sell-now instructions as market entries without a
+  printed zone, keeping the confirmed sizing, protective stop, AI votes and
+  fresh-signal checks; attach later matching targets to the same positions.
+
+### Gold channel update safety
+
+- Skip a superseded signal update without disabling entries only when the
+  tracked signal and broker both confirm there are no positions or pending
+  orders; retain the protective stop for exposure or unavailable checks.
+
 ### Dependency security
 
 - Updated pyasn1 to 0.6.5 to address four ASN.1 decoding vulnerabilities.

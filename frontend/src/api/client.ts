@@ -439,6 +439,10 @@ export interface GeneralSettingsOut {
   max_entry_drift_usd: number;
   /** Move remaining classic orders to breakeven after TP1. Default on. */
   be_after_tp1: boolean;
+  /** Optional two-leg profit trailing; distances are absolute instrument price units. */
+  profit_trailing_enabled: boolean;
+  profit_trailing_step: number;
+  profit_trailing_distance: number;
   /** Channel playbook generation. Default off. */
   reviewer_enabled: boolean;
   /** Drop Telegram posts that do not contain `tag_filter_tag`. Default off. */
@@ -541,6 +545,9 @@ export interface GeneralSettingsInput {
   use_fixed_order_lots?: boolean;
   max_entry_drift_usd?: number;
   be_after_tp1?: boolean;
+  profit_trailing_enabled?: boolean;
+  profit_trailing_step?: number;
+  profit_trailing_distance?: number;
   reviewer_enabled?: boolean;
   tag_filter_enabled?: boolean;
   tag_filter_tag?: string;

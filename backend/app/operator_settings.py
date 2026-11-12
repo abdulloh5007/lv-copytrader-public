@@ -16,6 +16,8 @@ KEY_ORDER_LOT_SIZE: str = "trading.order_lot_size"
 KEY_USE_FIXED_ORDER_LOTS: str = "trading.use_fixed_order_lots"
 KEY_MAX_ENTRY_DRIFT_USD: str = "trading.max_entry_drift_usd"
 KEY_BE_AFTER_TP1: str = "trading.be_after_tp1"
+KEY_PROFIT_TRAILING: str = "trading.profit_trailing"
+KEY_LEGACY_GOLD_TRAILING: str = "trading.uz_gold_trailing"
 KEY_SYSTEM_PROMPT: str = "ai.system_prompt"
 
 REVIEWER_ENABLED_DEFAULT: bool = False
@@ -29,6 +31,8 @@ USE_FIXED_ORDER_LOTS_DEFAULT: bool = True
 #: price units from the channel entry or zone. At or inside it, the entry is opened.
 MAX_ENTRY_DRIFT_USD_DEFAULT: float = 5.0
 BE_AFTER_TP1_DEFAULT: bool = True
+PROFIT_TRAILING_STEP_DEFAULT: float = 2.0
+PROFIT_TRAILING_DISTANCE_DEFAULT: float = 5.0
 
 #: Stored on a classic multi-order group. The watchdog moves the rest to breakeven
 #: after the nearest take-profit ticket is gone.
@@ -178,6 +182,22 @@ async def be_after_tp1_enabled(session: Any) -> bool:
     get_setting = _get_setting()
     stored = await get_setting(session, KEY_BE_AFTER_TP1, BE_AFTER_TP1_DEFAULT)
     return _as_bool(stored, BE_AFTER_TP1_DEFAULT)
+
+
+async def profit_trailing_config(session: Any) -> dict[str, Any]:
+    """Read the global policy; preserve the owner's older source-bound policy.
+
+    A malformed explicit policy is disabled instead of falling back to an old
+    enabled one. Only an absent global policy may use the legacy configuration.
+    """
+    get_setting = _get_setting()
+    stored = await get_setting(session, KEY_PROFIT_TRAILING, None)
+    legacy = stored is None
+    if legacy:
+        stored = await get_setting(session, KEY_LEGACY_GOLD_TRAILING, None)
+    result = dict(stored) if isinstance(stored, dict) else {}
+    result["legacy"] = legacy and isinstance(stored, dict)
+    return result
 
 
 async def stored_system_prompt(session: Any) -> str:

@@ -40,6 +40,7 @@ from app.config import settings
 from app.db import get_setting, session_scope
 from app.errors import SignalPilotError
 from app.models import Message, StoplessEpisode, Trade, utcnow
+from app.operator_settings import profit_trailing_config
 from app.trading.constants import POSITION_TYPE_NAMES
 from app.trading.pricing import validate_stops
 from app.trading.symbols import BROKER_SUFFIXES, broker_day_start_ts
@@ -977,8 +978,20 @@ class SlWatchdog:
 
     async def _loop(self) -> None:
         """Run :meth:`tick` every ``SL_WATCHDOG_SECONDS`` until stopped."""
-        interval = max(1.0, float(self.settings.SL_WATCHDOG_SECONDS))
+        full_interval = max(1.0, float(self.settings.SL_WATCHDOG_SECONDS))
+        loop = asyncio.get_running_loop()
+        next_full = loop.time() + full_interval
         while not self._stopping.is_set():
+            interval = max(0.0, next_full - loop.time())
+            fast_monitor = False
+            try:
+                async with session_scope() as session:
+                    trailing = await profit_trailing_config(session)
+                if isinstance(trailing, dict) and trailing.get("enabled") is True:
+                    interval = min(interval, 5.0)
+                    fast_monitor = True
+            except Exception as exc:
+                log.warning("profit_trailing_schedule_failed error=%s", exc)
             try:
                 await asyncio.wait_for(self._stopping.wait(), timeout=interval)
                 return
@@ -987,7 +1000,13 @@ class SlWatchdog:
             except asyncio.CancelledError:
                 raise
             try:
-                await self.tick()
+                if loop.time() >= next_full:
+                    try:
+                        await self.tick()
+                    finally:
+                        next_full = loop.time() + full_interval
+                elif fast_monitor:
+                    await self._monitor_trades()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - one bad cycle never kills the task
@@ -1011,6 +1030,10 @@ class SlWatchdog:
                 log.warning(
                     "sl_watchdog_action_failed ticket=%s error=%s", action.ticket, exc
                 )
+        await self._monitor_trades()
+
+    async def _monitor_trades(self) -> None:
+        """Observe closes and trailing without changing stopless retry cadence."""
         executor = getattr(self.runtime, "executor", None)
         if executor is None:
             return
@@ -1018,6 +1041,7 @@ class SlWatchdog:
             from app.trading.reconcile import monitor_closes
 
             await monitor_closes(self.runtime)
+            await executor.trail_profit()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - BE trail must not take down the watchdog

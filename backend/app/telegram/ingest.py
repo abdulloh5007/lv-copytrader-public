@@ -840,6 +840,11 @@ class Ingestor:
                 old_id, new_id = entry_identity(previous.text), entry_identity(current.text)
         if old_id is None or new_id is None or old_id == new_id:
             return
+        if (str(chat_id) == str(research_chat) and old_id[0] == new_id[0]
+                and (old_id[1] is None or new_id[1] is None)):
+            # Adding a printed zone to a market-now instruction is not a
+            # direction correction. Two printed zones still compare exactly.
+            return
         await self.runtime.set_armed(False)
         detail = (f"Signal {message_id} was edited from {old_id} to "
                   f"{new_id}. Automatic trading was disabled. "

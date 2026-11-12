@@ -281,6 +281,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "title.modified": "✏️ UPDATED",
         "title.closed": "⚪ CLOSED",
         "title.rejected": "⛔ ERROR",
+        "title.skipped": "🟡 SIGNAL SKIPPED",
         "title.attention": "⚠️ ATTENTION",
         "label.symbol": "Symbol",
         "label.volume": "Volume",
@@ -306,6 +307,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "label.unmanaged_tp": "Unmanaged targets",
         "label.slippage": "Slippage",
         "label.signal": "Signal",
+        "label.signal_post": "Post",
         "cause.tp": "take profit",
         "cause.sl": "stop loss",
         "cause.ai": "closed by the AI",
@@ -392,6 +394,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "title.modified": "✏️ ИЗМЕНЕНО",
         "title.closed": "⚪ ЗАКРЫТО",
         "title.rejected": "⛔ ОШИБКА",
+        "title.skipped": "🟡 СИГНАЛ ПРОПУЩЕН",
         "title.attention": "⚠️ ВНИМАНИЕ",
         "label.symbol": "Символ",
         "label.volume": "Объём",
@@ -417,6 +420,7 @@ STRINGS: Final[dict[str, dict[str, str]]] = {
         "label.unmanaged_tp": "Неуправляемые цели",
         "label.slippage": "Проскальзывание",
         "label.signal": "Сигнал",
+        "label.signal_post": "Сообщение",
         "cause.tp": "тейк-профит",
         "cause.sl": "стоп-лосс",
         "cause.ai": "закрыто ИИ",
@@ -2191,6 +2195,40 @@ class Notifier:
         lines.extend(self._ticket_lines(kw, locale))
         lines.extend(self._signal_lines(kw, locale))
         lines.extend(self._reason_lines(kw, locale))
+        return "\n".join(lines)
+
+    def render_skipped(self, **kw: Any) -> str:
+        """Explain a recognized entry that did not place an order."""
+        locale = self._locale_of(kw)
+        lines = [self._head("title.skipped", kw, locale)]
+        post = _first(kw, "post")
+        if post:
+            lines.append(self._line("label.signal_post", _esc(post, limit=200), locale))
+        reason = str(_first(kw, "reason") or "").strip()
+        explanations = (
+            ("quote_outside_entry_zone", "Price was outside the permitted entry zone.", "Цена была вне допустимой зоны входа."),
+            ("target_reached_before_entry", "TP1 was reached before entry.", "Цена достигла TP1 до входа."),
+            ("stale_quote", "A fresh market price was unavailable.", "Не удалось получить свежую рыночную цену."),
+            ("edited_or_stale_signal", "The signal was edited or too old.", "Сигнал был изменён или уже устарел."),
+            ("triage said", "AI did not confirm this as an entry.", "ИИ не подтвердил сигнал как вход."),
+            ("Signal was too old", "The signal arrived too late to start waiting.", "Сигнал пришёл слишком поздно для ожидания входа."),
+            ("Another signal is already waiting", "Another signal is already waiting for its entry zone.", "Бот уже ожидает зону входа по другому сигналу."),
+            ("first observed edit requires verified empty positions and orders", "Only an edited post arrived; broker positions or orders could not be verified as empty.", "Пришла только правка; не удалось подтвердить отсутствие позиций и ордеров."),
+            ("first observed edit could not be verified", "The edited signal could not be verified.", "Не удалось проверить полученную правку сигнала."),
+            ("first observed edit was already processed", "This signal was already processed.", "Этот сигнал уже обрабатывался."),
+            ("signal already has a recorded trade", "A trade for this signal is already recorded.", "По этому сигналу сделка уже зарегистрирована."),
+            ("another channel message", "A newer channel post cancelled the wait.", "Новое сообщение канала отменило ожидание входа."),
+            ("new channel message", "A newer channel post cancelled the wait.", "Новое сообщение канала отменило ожидание входа."),
+            ("signal follow-up", "The channel changed the signal; the update could not be verified.", "Канал изменил сигнал; проверить обновление не удалось."),
+            ("signal entry zone changed", "The channel changed the entry zone.", "Канал изменил зону входа."),
+            ("signal changed before entry", "The channel changed the signal before entry.", "Канал изменил сигнал до входа."),
+            ("trading was disabled", "Automatic trading was disabled before entry.", "Автоторговля была отключена до входа."),
+            ("gold channel entry could not be verified", "The entry could not be verified; no new order was sent.", "Не удалось проверить вход; новый ордер не отправлен."),
+        )
+        translated = next((ru if locale == 'ru' else en for key, en, ru in explanations if key in reason), reason)
+        if translated:
+            lines.append(self._line("label.reason", _esc(translated), locale))
+        lines.extend(self._signal_lines(kw, locale))
         return "\n".join(lines)
 
     def render_attention(self, **kw: Any) -> str:

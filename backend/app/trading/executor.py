@@ -54,7 +54,7 @@ from app.ai.tools import WATCHDOG_TOOL_NAMES, spec_by_name
 from app.config import Settings
 from app.db import get_setting, session_scope
 from app.errors import ConfigError, RpcError, SignalPilotError, TradingError, retcode_message
-from app.models import Message, Source, Trade, TradeEvent, utcnow
+from app.models import Message, Run, Source, Trade, TradeEvent, utcnow
 from app.operator_settings import (
     MAX_ENTRY_DRIFT_USD_DEFAULT,
     MODE_AI_MANAGED,
@@ -63,6 +63,7 @@ from app.operator_settings import (
     max_entry_drift_usd,
     order_lot_size,
     orders_per_signal,
+    profit_trailing_config,
     use_fixed_order_lots,
 )
 from app.trading import guards, ladder_stats, pricing
@@ -108,6 +109,10 @@ if TYPE_CHECKING:  # pragma: no cover - type-checker only; importing Runtime wou
     from app.runtime import Runtime
 
 log = get_logger(__name__)
+
+
+class _GoldMessageSuperseded(ConfigError):
+    """A newer, different revision arrived before this one could be checked."""
 
 
 class _TaskReentrantLock:
@@ -402,6 +407,8 @@ class RunContext:
     bypass_arm: bool = False
     watchdog_ticket: int | None = None
     waiting_for_zone: bool = False
+    first_observed_edit: bool = False
+    trailing_config_token: tuple[Any, ...] | None = None
 
 
 @dataclass
@@ -1805,7 +1812,7 @@ class Executor:
                 return True
             return False
 
-    async def _uz_gold_context(self, ctx: RunContext) -> tuple[Message, dict[str, Any]]:
+    async def _uz_gold_context(self, ctx: RunContext, *, entry_followups: bool = False) -> tuple[Message, dict[str, Any]]:
         """Resolve the private source and explicitly enabled execution policy."""
         async with session_scope() as session:
             target = await get_setting(session, "ingest.research_only_chat_id", None)
@@ -1821,12 +1828,70 @@ class Executor:
             distance = _as_float(policy.get("stop_distance"))
             if lots is None or lots <= 0 or distance != 15.0:
                 raise ConfigError("gold channel volume or fixed stop is not configured")
+            if entry_followups:
+                refs = await guards.chain_signal_refs(session, row.signal_ref)
+                previous_trade = (await session.execute(select(Trade.id).where(
+                    Trade.signal_ref.in_(refs)
+                ).limit(1))).scalar_one_or_none() if refs else None
+                if previous_trade is not None:
+                    raise ConfigError("signal already has a recorded trade")
+            if ctx.first_observed_edit:
+                earlier = (await session.execute(select(Message.id).where(
+                    Message.source_id == row.source_id, Message.message_id == row.message_id,
+                    Message.id < row.id
+                ).limit(1))).scalar_one_or_none()
+                if (not entry_followups or not row.edit_date or row.catchup
+                        or row.reply_to_message_id is not None or earlier is not None):
+                    raise ConfigError("first observed edit could not be verified")
+                prior_run = (await session.execute(select(Run.id).join(
+                    Message, Run.message_row_id == Message.id
+                ).where(Message.source_id == row.source_id, Message.message_id == row.message_id,
+                        Run.kind == "signal", Run.id != ctx.run_id).limit(1))).scalar_one_or_none()
+                if prior_run is not None:
+                    raise ConfigError("first observed edit was already processed")
+                if row.posted_at is None:
+                    raise ConfigError("first observed edit could not be verified")
+                stamp = row.posted_at.replace(tzinfo=timezone.utc) if row.posted_at.tzinfo is None else row.posted_at
+                if int(row.edit_date) < int(stamp.timestamp()) or int(row.edit_date) > int(time.time()) + 2:
+                    raise ConfigError("first observed edit could not be verified")
             latest = (await session.execute(select(Message).where(
                 Message.source_id == row.source_id, Message.message_id == row.message_id
             ).order_by(Message.revision.desc(), Message.id.desc()).limit(1))).scalars().first()
-            if (latest is None or row.deleted_at is not None or latest.deleted_at is not None
-                    or (latest.id != row.id and str(latest.text or "") != str(row.text or ""))):
+            if latest is None or row.deleted_at is not None or latest.deleted_at is not None:
                 raise ConfigError("gold channel message was edited or deleted")
+            if latest.id != row.id and str(latest.text or "") != str(row.text or ""):
+                import re
+                from app.ai.uz_gold_zone import entry_identity
+                first_id = entry_identity(str(row.text or ""))
+                if not entry_followups or row.edit_date or row.catchup or first_id is None:
+                    raise _GoldMessageSuperseded("gold channel message has a newer revision")
+                revisions = (await session.execute(select(Message).where(
+                    Message.source_id == row.source_id, Message.message_id == row.message_id,
+                    Message.id >= row.id
+                ).order_by(Message.revision, Message.id))).scalars().all()
+                zone = first_id[1:] if first_id[1] is not None else None
+                def base_text(text: str) -> str:
+                    without_targets = re.sub(r'\bTP\s*[:=]?\s*\d{1,6}(?:\.\d+)?\b', '', text, flags=re.I)
+                    return ' '.join(without_targets.lower().split())
+                original_base = base_text(str(row.text or ""))
+                for revision in revisions:
+                    identity = entry_identity(str(revision.text or ""))
+                    if (revision.deleted_at is not None or revision.catchup or identity is None
+                            or identity[0] != first_id[0] or revision.posted_at != row.posted_at):
+                        raise ConfigError("signal follow-up is not consistent with the original")
+                    if first_id[1] is not None and base_text(str(revision.text or "")) != original_base:
+                        raise ConfigError("signal follow-up changed more than targets")
+                    if identity[1] is not None:
+                        if zone is not None and zone != identity[1:]:
+                            raise ConfigError("signal entry zone changed")
+                        zone = identity[1:]
+                newer = (await session.execute(select(Message.id).where(
+                    Message.source_id == row.source_id, Message.id > row.id,
+                    Message.message_id != row.message_id, Message.kind == "text", Message.text != ""
+                ).limit(1))).scalar_one_or_none()
+                if newer is not None:
+                    raise ConfigError("another channel message superseded the signal")
+                row = latest
             if ctx.waiting_for_zone:
                 if await guards.check_armed(session):
                     raise ConfigError("trading was disabled while waiting for the entry")
@@ -1850,7 +1915,7 @@ class Executor:
         from app.ai.uz_gold_plan import plan_gold_entry
         from app.trading.symbols import server_time_offset, _strip_suffix
         try:
-            row, policy = await self._uz_gold_context(ctx)
+            row, policy = await self._uz_gold_context(ctx, entry_followups=True)
             if _strip_suffix(str(plan.ref.name).upper()) != "XAUUSD":
                 return "gold channel execution requires the verified XAUUSD symbol"
             quote = await self.resolver.quote(plan.ref.name)
@@ -1866,7 +1931,8 @@ class Executor:
                 total_lots=float(policy["total_lots"]), volume_min=float(plan.ref.volume_min),
                 volume_max=float(plan.ref.volume_max), volume_step=float(plan.ref.volume_step),
                 margin_mode=plan.margin_mode, stop_distance=float(policy["stop_distance"]),
-                clock_offset=offset, edited=bool(row.edit_date), catchup=bool(row.catchup),
+                clock_offset=offset, edited=bool(row.edit_date) and row.id == ctx.message_row_id and not ctx.first_observed_edit,
+                catchup=bool(row.catchup),
                 max_signal_age=float(policy["entry_wait_seconds"]) if ctx.waiting_for_zone else 60.0,
                 zone_tolerance=float(policy.get("zone_tolerance", 0.0)),
             )
@@ -1892,7 +1958,14 @@ class Executor:
         from app.ai.uz_gold_plan import plan_gold_entry
         from app.trading.symbols import server_time_offset, _strip_suffix
         try:
-            row, policy = await self._uz_gold_context(ctx)
+            row, policy = await self._uz_gold_context(ctx, entry_followups=True)
+            if ctx.first_observed_edit:
+                # When the original post was not seen, only start on an empty,
+                # verifiable broker account. Never guess whether exposure exists.
+                positions, orders = await self.rpc.positions_get(), await self.rpc.orders_get()
+                if positions is None or orders is None or positions or orders:
+                    return _refuse("first observed edit requires verified empty positions and orders",
+                                   stage="channel_profile")
             candidates = await self.resolver.candidates("XAUUSD")
             ref = next((r for r in candidates if _strip_suffix(str(r.name).upper()) == "XAUUSD" and r.tradable), None)
             if ref is None:
@@ -1913,7 +1986,8 @@ class Executor:
                 total_lots=float(policy["total_lots"]), volume_min=float(ref.volume_min),
                 volume_max=float(ref.volume_max), volume_step=float(ref.volume_step),
                 margin_mode=mode, stop_distance=float(policy["stop_distance"]),
-                clock_offset=offset, edited=bool(row.edit_date), catchup=bool(row.catchup),
+                clock_offset=offset, edited=bool(row.edit_date) and row.id == ctx.message_row_id and not ctx.first_observed_edit,
+                catchup=bool(row.catchup),
                 max_signal_age=float(policy["entry_wait_seconds"]) if ctx.waiting_for_zone else 60.0,
                 zone_tolerance=float(policy.get("zone_tolerance", 0.0)),
             )
@@ -1932,9 +2006,13 @@ class Executor:
                 plan.runner_mode = MODE_BE_AFTER_TP1
             failure = await self._uz_gold_entry_guard(work, plan)
             if failure:
+                if failure == "gold channel targets no longer match the verified signal":
+                    return _refuse("gold channel entry refused: targets_changed_before_order", stage="channel_profile")
                 return _refuse(failure, stage="channel_profile")
             refusal = await self._entry_open_gate(work, plan)
             if refusal is not None:
+                if refusal.get("message") == "gold channel targets no longer match the verified signal":
+                    return _refuse("gold channel entry refused: targets_changed_before_order", stage="channel_profile")
                 return refusal
             refusal = await self._gate(work, plan)
             if refusal is not None:
@@ -1950,6 +2028,19 @@ class Executor:
                 text = self._render("render_attention", subject="gold channel execution", detail=detail)
                 self._notify("attention", text or detail)
             return result
+        except _GoldMessageSuperseded:
+            return _refuse("signal changed before entry and could not be verified", stage="channel_profile")
+        except ConfigError as exc:
+            allowed = {"signal follow-up is not consistent with the original",
+                       "signal follow-up changed more than targets", "signal entry zone changed",
+                       "another channel message superseded the signal",
+                       "gold channel message was edited or deleted",
+                       "new channel message invalidated the waiting entry",
+                       "trading was disabled while waiting for the entry",
+                       "first observed edit could not be verified", "first observed edit was already processed",
+                       "signal already has a recorded trade"}
+            message = exc.message if exc.message in allowed else "gold channel entry could not be verified"
+            return _refuse(message, stage="channel_profile")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - do not open if any source check fails
@@ -1959,10 +2050,44 @@ class Executor:
     @_serialize_broker_write
     async def update_uz_gold_signal(self, ctx: RunContext) -> dict[str, Any]:
         """Apply two targets or a break-even request to the exact tracked signal only."""
-        from app.ai.uz_gold_zone import parse_uz_gold_post
+        from app.ai.uz_gold_zone import entry_identity, parse_uz_gold_post, target_count
         from app.trading.symbols import _strip_suffix
         try:
-            row, _policy = await self._uz_gold_context(ctx)
+            try:
+                row, _policy = await self._uz_gold_context(ctx)
+            except _GoldMessageSuperseded:
+                # Skipping an obsolete update is safe only when neither the local
+                # chain nor the broker has any exposure, including pending orders.
+                # If either check is unavailable or nonempty, fail closed as before.
+                async with session_scope() as session:
+                    trades = await guards.live_chain_trades(session, ctx.signal_ref)
+                positions = await self.rpc.positions_get()
+                orders = await self.rpc.orders_get()
+                if not trades and positions is not None and orders is not None and not positions and not orders:
+                    return _refuse("superseded channel update skipped; no broker exposure",
+                                   stage="channel_profile", code="superseded_no_exposure")
+                # Rapid edits can replace the TP-only post with the same signal
+                # plus a zone before its turn runs. Apply only the latest queued,
+                # same-direction two-target revision; all normal identity and
+                # broker checks below still apply, and the queued run is idempotent.
+                async with session_scope() as session:
+                    old = await session.get(Message, int(ctx.message_row_id or 0))
+                    latest = None if old is None else (await session.execute(select(Message).where(
+                        Message.source_id == old.source_id, Message.message_id == old.message_id
+                    ).order_by(Message.revision.desc(), Message.id.desc()).limit(1))).scalars().first()
+                    old_id = entry_identity(str(old.text or "")) if old else None
+                    new_id = entry_identity(str(latest.text or "")) if latest else None
+                    compatible = (trades and old and latest and latest.status == "pending"
+                                  and not old.deleted_at and not latest.deleted_at and old_id and new_id
+                                  and old_id[0] == new_id[0]
+                                  and (old_id[1] is None or new_id[1] is None or old_id[1:] == new_id[1:])
+                                  and target_count(old.text) == target_count(latest.text) == 2)
+                    latest_id = int(latest.id) if compatible else None
+                if latest_id is None:
+                    return _refuse("superseded channel update with possible exposure; check positions",
+                                   stage="channel_profile")
+                ctx = replace(ctx, message_row_id=latest_id)
+                row, _policy = await self._uz_gold_context(ctx)
             initial_parse = parse_uz_gold_post(str(row.text or ""), quote=None)
             is_be = initial_parse.kind == "management" and initial_parse.action == "break_even_request"
             if is_be and row.reply_to_message_id is None:
@@ -1987,12 +2112,14 @@ class Executor:
             if before.kind != "entry" or before.side is None:
                 return _refuse("original signal cannot be verified", stage="channel_profile")
             if not is_be:
-                if (after.kind != "entry" or after.side != before.side or after.zone != before.zone
+                if (after.kind != "entry" or after.side != before.side
+                        or (before.zone is not None and after.zone != before.zone)
                         or len(after.targets) != 2):
                     return _refuse("updated targets conflict with the original signal", stage="channel_profile")
             work = replace(ctx, signal_ref=trades[0].signal_ref, origin="uz_gold_management", bypass_arm=True)
             changed, unchanged, failures = [], [], []
             for trade in sorted(trades, key=lambda t: t.split_index):
+                await self._uz_gold_context(ctx)
                 position, refusal = await self._find_position(trade.ticket)
                 if refusal is not None or position is None:
                     failures.append("a recorded position is no longer available")
@@ -2018,6 +2145,10 @@ class Executor:
                     if index not in (0, 1):
                         failures.append("position split index is invalid"); continue
                     target = float(after.targets[index])
+                    entry = float(position.price_open)
+                    if (side == "buy" and target <= entry) or (side == "sell" and target >= entry):
+                        failures.append("target is not profitable relative to the actual entry")
+                        continue
                     if abs(float(position.tp or 0.0) - target) < 1e-8:
                         unchanged.append(int(position.ticket)); continue
                     result = await self.modify_position(work, ticket=int(position.ticket), tp=target,
@@ -3869,6 +4000,146 @@ class Executor:
             ),
         }
 
+    async def trail_profit(self) -> dict[str, Any]:
+        """Manage new, enrolled two-leg runners after a verified TP1.
+
+        The existing broker stop is the durable step anchor, so a restart cannot loosen
+        it or replay a move. TP remains in place until BE has actually been confirmed.
+        """
+        async with session_scope() as session:
+            cfg = await profit_trailing_config(session)
+            if cfg.get("enabled") is not True:
+                return {"ok": True, "changed": []}
+            try:
+                start = float(cfg["start_ts"])
+                step = float(cfg["step"])
+                distance = float(cfg["distance"])
+                if (not all(math.isfinite(x) and x > 0 for x in (start, step, distance))
+                        or start > time.time() + 2 or step > 1000 or distance > 1000):
+                    raise ValueError("invalid trailing numbers")
+                grandfathered_start = float(cfg.get("legacy_start_ts", start))
+                if not math.isfinite(grandfathered_start) or grandfathered_start <= 0:
+                    raise ValueError("invalid legacy start")
+                cutoff = datetime.fromtimestamp(min(start, grandfathered_start), tz=timezone.utc).replace(tzinfo=None)
+            except (KeyError, TypeError, ValueError, OverflowError):
+                log.error("profit_trailing_invalid_config")
+                return {"ok": False, "changed": []}
+            stmt = select(Trade).join(Message, Trade.message_row_id == Message.id).where(
+                Trade.kind == "position",
+                Trade.split_count == 2, Trade.external.is_(False),
+                Message.posted_at >= cutoff,
+            )
+            if cfg.get("legacy"):
+                chat_id = await get_setting(session, "ingest.research_only_chat_id", None)
+                try:
+                    configured_source = int(cfg["source_id"])
+                    source = (await session.execute(select(Source).where(
+                        Source.id == configured_source, Source.chat_id == int(chat_id),
+                        Source.is_active.is_(True)
+                    ))).scalars().first()
+                except (TypeError, ValueError, KeyError):
+                    source = None
+                if source is None:
+                    return {"ok": True, "changed": []}
+                stmt = stmt.where(Trade.source_id == source.id)
+            trades = list((await session.execute(stmt)).scalars().all())
+            message_ids = {t.message_row_id for t in trades if t.message_row_id is not None}
+            messages = {}
+            if message_ids:
+                rows = (await session.execute(select(Message).where(Message.id.in_(message_ids)))).scalars().all()
+                messages = {m.id: m for m in rows}
+
+        if not trades:
+            return {"ok": True, "changed": []}
+        snapshot = await self.rpc.positions_get()
+        if snapshot is None:
+            return {"ok": False, "changed": []}
+        live = {int(p.ticket): p for p in _rows(snapshot)
+                if int(p.magic) == int(self.settings.MAGIC_NUMBER)}
+        groups: dict[str, list[Trade]] = {}
+        for trade in trades:
+            if trade.signal_ref:
+                groups.setdefault(str(trade.signal_ref), []).append(trade)
+        changed = []
+        for signal_ref, group in groups.items():
+            if len(group) != 2 or any(t.ladder_role or t.runner_mode != MODE_BE_AFTER_TP1 for t in group):
+                continue
+            # Classic two-leg plans record TP1 as split 0 and TP2 as
+            # split 1. Do not infer roles from a target that might have been
+            # manually changed or removed since the trade was opened.
+            firsts = [t for t in group if t.split_index == 0]
+            runners = [t for t in group if t.split_index == 1]
+            if len(firsts) != 1 or len(runners) != 1:
+                continue
+            first, runner = firsts[0], runners[0]
+            if first.symbol != runner.symbol or first.side != runner.side or first.source_id != runner.source_id:
+                continue
+            if (first.status != "closed" or first.close_cause != "tp"
+                    or int(first.ticket) in live or float(first.tp or 0) <= 0):
+                continue
+            msg = messages.get(runner.message_row_id)
+            if msg is None or msg.posted_at is None or first.message_row_id != runner.message_row_id:
+                continue
+            posted = msg.posted_at.replace(tzinfo=timezone.utc).timestamp()
+            grandfathered = (not cfg.get("legacy") and posted >= grandfathered_start
+                             and runner.source_id == cfg.get("legacy_source_id")
+                             and runner.symbol.upper().startswith("XAUUSD"))
+            if posted < start and not grandfathered:
+                continue
+            position = live.get(int(runner.ticket))
+            if (position is None or runner.status != "open" or str(position.symbol) != runner.symbol
+                    or (cfg.get("legacy") and not str(position.symbol).upper().startswith("XAUUSD"))):
+                continue
+            side = POSITION_TYPE_NAMES.get(int(position.type))
+            entry, stop = float(position.price_open), float(position.sl)
+            if side not in ("buy", "sell") or stop <= 0 or not pricing.stop_is_at_or_beyond_breakeven(side, entry, stop):
+                continue
+            ctx = RunContext(run_id=uuid.uuid4().hex, signal_ref=signal_ref,
+                             source_id=runner.source_id, message_row_id=runner.message_row_id,
+                             origin="profit_trailing", bypass_arm=True,
+                             trailing_config_token=(start, step, distance, bool(cfg.get("legacy")),
+                                                    cfg.get("source_id") if cfg.get("legacy") else None,
+                                                    cfg.get("legacy_start_ts"), cfg.get("legacy_source_id")))
+            if float(position.tp or 0) > 0:
+                try:
+                    quote = await self.resolver.quote(str(position.symbol))
+                    offset = await server_time_offset(self.rpc, self.resolver)
+                    age = time.time() + offset - float(quote.time_ts)
+                    if not math.isfinite(age) or age < -2 or age > 10:
+                        continue
+                except (SignalPilotError, TypeError, ValueError, OverflowError) as exc:
+                    log.warning("profit_trailing_quote_failed ticket=%s error=%s", runner.ticket, exc)
+                    continue
+                result = await self.modify_position(ctx, ticket=int(runner.ticket), tp=0,
+                                                    reason="TP1 confirmed; enable profit trailing")
+                if result.get("ok"):
+                    changed.append(int(runner.ticket))
+                continue
+            try:
+                ref = await self.resolver.get(str(position.symbol))
+                quote = await self.resolver.quote(ref.name)
+                offset = await server_time_offset(self.rpc, self.resolver)
+                age = time.time() + offset - float(quote.time_ts)
+                market = float(quote.bid if side == "buy" else quote.ask)
+                if not math.isfinite(market) or market <= 0 or not math.isfinite(age) or age < -2 or age > 10:
+                    continue
+                # The first trigger is measured from TP1; subsequent triggers are
+                # measured from the last broker-confirmed stop, not from each tick.
+                tp1 = float(first.tp)
+                if (market - tp1 if side == "buy" else tp1 - market) < step:
+                    continue
+                candidate = market - distance if side == "buy" else market + distance
+                improvement = candidate - stop if side == "buy" else stop - candidate
+                if improvement + 1e-9 < step:
+                    continue
+                result = await self.modify_position(ctx, ticket=int(runner.ticket), sl=candidate,
+                                                    reason="profit trailing step")
+                if result.get("ok"):
+                    changed.append(int(runner.ticket))
+            except (SignalPilotError, TypeError, ValueError, OverflowError) as exc:
+                log.warning("profit_trailing_failed ticket=%s error=%s", runner.ticket, exc)
+        return {"ok": True, "changed": changed}
+
     async def _mark_classic_managed(self, ticket: int) -> None:
         """Remember that a non-watchdog stop change already manages this classic group."""
         try:
@@ -4528,6 +4799,42 @@ class Executor:
                 else pricing.round_stop_away(ref, requested_tp, side, "tp")
             )
 
+        if ctx.origin == "profit_trailing":
+            # Recheck under the broker-write mutex: another task or the owner may
+            # have changed the position since the monitoring snapshot was read.
+            if not pricing.stop_is_at_or_beyond_breakeven(side, float(position.price_open), current_sl):
+                return _refuse("profit trailing requires a confirmed break-even stop", ticket=number)
+            async with session_scope() as session:
+                config = await profit_trailing_config(session)
+            if not isinstance(config, dict) or config.get("enabled") is not True:
+                return _refuse("profit trailing is no longer enabled", ticket=number)
+            try:
+                token = (float(config["start_ts"]), float(config["step"]), float(config["distance"]),
+                         bool(config.get("legacy")), config.get("source_id") if config.get("legacy") else None,
+                         config.get("legacy_start_ts"), config.get("legacy_source_id"))
+                if token != ctx.trailing_config_token:
+                    return _refuse("profit trailing configuration changed", ticket=number)
+            except (KeyError, TypeError, ValueError, OverflowError):
+                return _refuse("profit trailing configuration is invalid", ticket=number)
+            if tp is not None and (new_tp != 0 or sl is not None):
+                return _refuse("profit trailing can only remove the runner target", ticket=number)
+            if tp is not None:
+                # Removing a target extends exposure, so unlike tightening an
+                # existing stop it must not start while trading is disarmed.
+                async with session_scope() as session:
+                    refusal = await guards.check_armed(session)
+                if refusal:
+                    return _refuse(refusal, stage="disarmed", ticket=number)
+            if sl is not None:
+                try:
+                    step = float(config["step"])
+                    improvement = new_sl - current_sl if side == "buy" else current_sl - new_sl
+                    if (not math.isfinite(step) or step <= 0 or current_tp != 0
+                            or improvement + 1e-9 < step):
+                        raise ValueError("trailing state changed")
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    return _refuse("profit trailing step is no longer valid", ticket=number)
+
         if abs(new_sl - current_sl) < 1e-12 and abs(new_tp - current_tp) < 1e-12:
             return _refuse(
                 f"position #{number} already has sl {_price_text(current_sl, digits)} and tp "
@@ -4651,7 +4958,7 @@ class Executor:
         if (
             sl is not None
             and abs(new_sl - current_sl) > 1e-12
-            and str(ctx.origin or "") not in {"watchdog", "uz_gold_management"}
+            and str(ctx.origin or "") not in {"watchdog", "uz_gold_management", "profit_trailing"}
         ):
             await self._mark_classic_managed(number)
         changes: list[str] = []
@@ -4682,7 +4989,7 @@ class Executor:
                 changes={key: (old, new) for key, old, new in
                          (("sl", current_sl, new_sl), ("tp", current_tp, new_tp))
                          if abs(new - old) > 1e-12},
-                breakeven=(abs(new_sl-current_sl) > 1e-12 and
+                breakeven=(ctx.origin != "profit_trailing" and abs(new_sl-current_sl) > 1e-12 and
                            pricing.stop_is_at_or_beyond_breakeven(side, float(position.price_open), new_sl)),
                 signal_ref=ctx.signal_ref,
                 reason=reason,

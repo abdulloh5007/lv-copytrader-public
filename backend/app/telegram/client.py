@@ -1149,7 +1149,18 @@ class TelegramService:
         if ingestor is None:
             self._warn("ingestor_unavailable", handler="new_message")
             return
-        await ingestor.handle_message(message)
+        started = time.monotonic()
+        posted = getattr(message, "date", None)
+        age_ms = None
+        if isinstance(posted, datetime):
+            if posted.tzinfo is None:
+                posted = posted.replace(tzinfo=UTC)
+            age_ms = round((datetime.now(UTC) - posted.astimezone(UTC)).total_seconds() * 1000)
+        try:
+            await ingestor.handle_message(message)
+        finally:
+            log.info("telegram_delivery_timing message_id=%s arrival_age_ms=%s ingest_ms=%s",
+                     getattr(message, "id", None), age_ms, round((time.monotonic() - started) * 1000))
 
     async def _handle_message_edited(self, event: Any) -> None:
         """Hand an edit to the ingestor; §3.3 stores it as a new revision, not a new signal."""
@@ -1162,7 +1173,18 @@ class TelegramService:
         if ingestor is None:
             self._warn("ingestor_unavailable", handler="message_edited")
             return
-        await ingestor.handle_message(message, edited=True)
+        started = time.monotonic()
+        edited_at = getattr(message, "edit_date", None)
+        edit_age_ms = None
+        if isinstance(edited_at, datetime):
+            if edited_at.tzinfo is None:
+                edited_at = edited_at.replace(tzinfo=UTC)
+            edit_age_ms = round((datetime.now(UTC) - edited_at.astimezone(UTC)).total_seconds() * 1000)
+        try:
+            await ingestor.handle_message(message, edited=True)
+        finally:
+            log.info("telegram_edit_timing message_id=%s edit_age_ms=%s ingest_ms=%s",
+                     getattr(message, "id", None), edit_age_ms, round((time.monotonic() - started) * 1000))
 
     async def _handle_album(self, event: Any) -> None:
         """Hand a whole album to the ingestor as one message with every image.
