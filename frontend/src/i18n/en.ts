@@ -552,6 +552,8 @@ export const en = {
   // ── settings ──────────────────────────────────────────────────────────────
   'settings.title': 'Settings',
   'settings.telegram_section': 'Telegram account',
+  'settings.auto_reactions': 'Automatic reactions',
+  'settings.auto_reactions_hint': 'React to new posts in the selected channel with a random available free reaction from your Telegram account. Reactions already placed manually are kept.',
   'settings.mt5_section': 'MetaTrader 5 account',
   'settings.provider_section': 'AI provider',
   'settings.notifier_section': 'Notification bot',

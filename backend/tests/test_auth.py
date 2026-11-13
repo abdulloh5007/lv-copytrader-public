@@ -567,3 +567,9 @@ def test_a_non_ascii_passphrase_fails_the_login_instead_of_raising() -> None:
     assert credentials_match("op", "пароль", "op", "пароль") is True
     assert credentials_match("op", "пароль", "op", PASSWORD) is False
     assert credentials_match("op", PASSWORD, "op", "пароль") is False
+
+
+async def test_auto_reactions_cannot_be_enabled_without_authentication(secured):
+    _, client = secured
+    response = await client.put('/api/telegram/auto-reactions', json={'enabled': True})
+    assert response.status_code == 401

@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import mimetypes
 import re
+import time
 from pathlib import Path
 from typing import Any, Awaitable, Iterable
 
@@ -54,6 +55,9 @@ from app.models import MessageImage, Source
 from app.runtime import Runtime, get_runtime
 from app.schemas import (
     DialogsOut,
+    AutoReactionsSettings,
+    AutoReactionsOut,
+    AutoReactionsCheckOut,
     OkResponse,
     SendCodeOut,
     SignInOut,
@@ -71,6 +75,35 @@ from app.util.logging import get_logger
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 log = get_logger("app.api.telegram")
+
+
+@router.put("/auto-reactions", response_model=AutoReactionsOut)
+async def set_auto_reactions(payload: AutoReactionsSettings, runtime: Runtime = Depends(get_runtime)) -> Any:
+    """Opt in to free random reactions for posts after enabling the setting."""
+    async with session_scope() as session:
+        old = await get_setting(session, "tg.auto_reactions", {})
+        old = old if isinstance(old, dict) else {}
+        unchanged = payload.enabled and old.get("enabled") is True
+        since = old.get("since") if unchanged else (time.time() if payload.enabled else 0)
+        await set_setting(session, "tg.auto_reactions", {"enabled": payload.enabled, "since": since})
+    service = _service(runtime)
+    manager = getattr(service, "auto_reactions", None)
+    if manager is not None:
+        try:
+            await manager.refresh()
+        except Exception as exc:  # noqa: BLE001 - report a saved but unapplied change
+            log.warning("auto_reactions_refresh_failed error=%s", type(exc).__name__)
+            return _unavailable("automatic reactions")
+    return AutoReactionsOut(enabled=payload.enabled)
+
+
+@router.get("/auto-reactions/check", response_model=AutoReactionsCheckOut)
+async def check_auto_reactions(runtime: Runtime = Depends(get_runtime)) -> Any:
+    """Probe the active channel's reaction policy without sending a reaction."""
+    manager = getattr(_service(runtime), "auto_reactions", None)
+    if manager is None:
+        return AutoReactionsCheckOut(ok=False, enabled=False, available=0, message="Telegram unavailable")
+    return await manager.check()
 
 
 # --------------------------------------------------------------------------------------

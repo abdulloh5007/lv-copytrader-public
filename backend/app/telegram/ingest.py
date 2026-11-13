@@ -1254,6 +1254,10 @@ class Ingestor:
             (m for m in (fetched or []) if int(getattr(m, "id", 0) or 0) > 0),
             key=lambda m: int(m.id),
         )
+        queue_reaction = getattr(self.runtime.telegram, "queue_auto_reaction", None)
+        if callable(queue_reaction):
+            for message in messages:
+                queue_reaction(message)
         recorded = 0
         highest = last_message_id
         for group in _group_albums(messages):

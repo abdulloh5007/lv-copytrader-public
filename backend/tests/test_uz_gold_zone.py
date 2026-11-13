@@ -36,11 +36,35 @@ def test_observed_full_and_mixed_abbreviated_zones():
     assert parse_uz_gold_post('4290-295sell zone TP 4265 TP 4245', quote=4291).zone == (4290,4295)
     assert parse_uz_gold_post('Gold buy 30-27 TP 40 TP 50', quote=4130).zone == (4127,4130)
     assert parse_uz_gold_post('4217-22 sel zone TP 4195 TP 4175', quote=4219).side == 'sell'
+    post = parse_uz_gold_post('3914-19 sell zone minimal risk\nTP 3870\nTP 3750\nSl 40pips', quote=3916)
+    assert post.kind == 'entry' and post.targets == (3870, 3750) and post.sl_pips == 40
 
 
 def test_explicit_stop_pips_are_reported_not_converted_or_invented():
     post = parse_uz_gold_post('Gold 4146-42 buy zone Sl 30pips TP 4170 TP 4190', quote=4145)
     assert post.kind == 'entry' and post.sl_pips == 30 and post.sl is None
+
+
+def test_channel_stop_extracts_one_level_without_guessing_distance():
+    import pytest
+    from app.ai.uz_gold_zone import channel_stop
+    assert channel_stop('3914-19 sell zone\nSl 40pips') == (None, 40)
+    assert channel_stop('SL 3924.5') == (3924.5, None)
+    assert channel_stop('TP 3870') == (None, None)
+    with pytest.raises(ValueError, match='ambiguous_stop'):
+        channel_stop('SL 3924 SL 40pips')
+    with pytest.raises(ValueError, match='invalid_stop_distance'):
+        channel_stop('SL 0 pips')
+
+
+def test_market_and_personal_entry_recognize_channel_stop():
+    from app.ai.uz_gold_zone import entry_identity
+    text = 'Gold sell now SL 40pips TP 2375 TP 2372'
+    parsed = parse_uz_gold_post(text, quote=2380)
+    assert parsed.kind == 'entry' and parsed.side == 'sell' and parsed.sl_pips == 40
+    assert parsed.targets == (2375, 2372) and entry_identity(text) == ('sell', None, None)
+    parsed = parse_uz_gold_post('78-81 selldaman SL 2390', quote=2380)
+    assert parsed.kind == 'entry' and parsed.side == 'sell' and parsed.sl == 2390
 
 
 def test_conflicting_full_prices_or_instrument_are_rejected():
@@ -56,6 +80,12 @@ def test_management_messages_do_not_become_new_entries():
     assert parse_uz_gold_post('Yoping buylarni', quote=4130).action == 'close_request'
     assert parse_uz_gold_post('09-14 reentry 20sl zone', quote=4130).action == 'reentry_request'
     assert parse_uz_gold_post('450pips 2-TP✅', quote=4130).kind == 'ignored'
+
+
+def test_stop_hit_and_future_reentry_is_an_announcement_not_an_instruction():
+    for text in ('Stop urdi reentry beraman', 'Stop urdi, re-entry beraman❗️'):
+        post = parse_uz_gold_post(text, quote=None)
+        assert (post.kind, post.action) == ('ignored', 'reentry_announced')
 
 
 def test_market_now_is_unambiguous_and_does_not_invent_a_zone():

@@ -5,6 +5,38 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Channel stop prices
+
+- Recognize explicit channel stop prices in gold entries and edits, apply them
+  to matching positions, and keep a stronger break-even or trailing stop.
+- Convert gold pip-based stops at 0.10 price units per pip from each actual
+  fill, and use the configured fallback only when no channel stop exists.
+- Recalculate an automatic 1R target after the channel changes the stop; do
+  not replace an explicit channel target or loosen a protected stop.
+- Accept the channel's observed distant full-price gold target while retaining
+  strict direction, ordering and abbreviated-price checks.
+- Cover channel edits, per-position fills, simulated slippage and 1R updates
+  with broker-simulation tests; no live test orders are sent.
+
+### Gold signals without targets
+
+- Keep automatic trading enabled when an ambiguous channel instruction or an
+  unverifiable channel update needs review, while reporting the issue.
+- For verified gold entries without targets, put the first position at 1R and
+  leave the second without a take-profit for break-even and profit trailing.
+
+### Uzbek channel re-entry announcement
+
+- Recognize the observed stop-hit/future-re-entry announcement as information,
+  leaving trading armed for the next separately verified signal.
+
+### Automatic Telegram reactions
+
+- Add an opt-in Telegram setting to react to new active-channel posts with a
+  random available free reaction, using the connected Telegram user session.
+- Run reactions independently of signal processing, respect existing manual
+  reactions and Telegram flood waits, and deduplicate across edits and restarts.
+
 ### Gold profit trailing
 
 - Add an opt-in settings control for tracked classic two-order signals across

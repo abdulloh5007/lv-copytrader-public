@@ -21,6 +21,7 @@ hit, and what happened to the remaining positions.
 | Feature | Behavior |
 | --- | --- |
 | Telegram intake | Reads text, images, edits and follow-up messages from configured sources |
+| Automatic reactions | Optional random free reactions to new posts in the selected Telegram channel |
 | AI interpretation | Converts the signal and context into trading actions; records decisions in the dashboard |
 | MT5 execution | Opens market/pending orders and manages SL, TP, changes and closes |
 | Multiple targets | Supports ordinary split entries and ladder cover/runner management |
@@ -43,6 +44,12 @@ flowchart LR
 The channel reader uses your Telegram **user session**. The optional notification bot is a
 separate **Bot API token**. An AI provider account and an MT5 broker account are also needed;
 the public repository includes no credentials, sessions, or owner data.
+
+In **Settings → Telegram account**, automatic reactions can be enabled for new posts in the
+selected source. Reactions are sent from the connected Telegram user account, chosen from
+free reactions allowed by the channel; paid Stars are never used. Existing manual reactions
+are left alone. Telegram restrictions or connectivity problems can prevent a reaction, and
+the reaction queue runs separately from signal processing.
 
 ## Guided installation and the `lvct` console
 

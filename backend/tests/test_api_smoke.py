@@ -655,3 +655,20 @@ async def test_profit_trailing_preserves_legacy_owner_cohort_when_promoted_to_gl
         cfg = await get_setting(s, 'trading.profit_trailing')
     assert cfg['enabled'] and cfg['start_ts'] > legacy_start
     assert cfg['legacy_start_ts'] == legacy_start and cfg['legacy_source_id'] == 17
+
+
+async def test_auto_reaction_toggle_persists_and_does_not_rearm_on_repeated_save(client):
+    from app.db import get_setting, session_scope
+    general = (await client.get('/api/settings')).json()['telegram']
+    assert general['auto_reactions_enabled'] is False
+    response = await client.put('/api/telegram/auto-reactions', json={'enabled': True})
+    assert response.status_code == 200 and response.json()['enabled'] is True
+    async with session_scope() as s:
+        since = (await get_setting(s, 'tg.auto_reactions'))['since']
+    assert (await client.get('/api/settings')).json()['telegram']['auto_reactions_enabled'] is True
+    assert (await client.put('/api/telegram/auto-reactions', json={'enabled': True})).status_code == 200
+    async with session_scope() as s:
+        assert (await get_setting(s, 'tg.auto_reactions'))['since'] == since
+    assert (await client.put('/api/telegram/auto-reactions', json={'enabled': 'yes'})).status_code == 422
+    assert (await client.put('/api/telegram/auto-reactions', json={'enabled': False})).json()['enabled'] is False
+    assert (await client.get('/api/settings')).json()['telegram']['auto_reactions_enabled'] is False

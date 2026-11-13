@@ -38,6 +38,20 @@ class AppSetting(Base):
     )
 
 
+class AutoReactionReceipt(Base):
+    """Deduplicate automatic reactions across reconnects and process restarts."""
+
+    __tablename__ = "auto_reaction_receipts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="claimed", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uq_auto_reaction_post"),)
+
+
 class Source(Base):
     """A signal source (a Telegram chat); exactly one row is `is_active` at a time."""
 

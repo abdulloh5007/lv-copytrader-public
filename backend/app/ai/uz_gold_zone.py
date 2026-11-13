@@ -16,17 +16,23 @@ _RANGE = re.compile(r'(?<!\d)(\d{1,5})\s*[-–—]\s*(\d{1,5})(?!\d)')
 _TARGET = re.compile(r'\bTP\s*[:=]?\s*(\d{1,6}(?:\.\d+)?)\b', re.I)
 _SL_PIPS = re.compile(r'\bSL\s*[:=]?\s*(\d+(?:\.\d+)?)\s*PIPS?\b', re.I)
 _SL = re.compile(r'\bSL\s*[:=]?\s*(\d{3,6}(?:\.\d+)?)\b', re.I)
+_REENTRY_ANNOUNCEMENT = re.compile(
+    r'^\s*stop\s+urdi\s*[,!.!‼️❗️✅]*\s*re\s*-?\s*entry\s+beraman\s*[,!.!‼️❗️✅]*\s*$',
+    re.I,
+)
 _OTHER_SYMBOL = re.compile(r'\b(?:BTC|BTCUSD|ETH|ETHUSD|XAG|XAGUSD|EURUSD|GBPUSD)\b', re.I)
+_LEVEL = (r'(?:TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?|'
+          r'SL\s*[:=]?\s*(?:\d+(?:\.\d+)?\s*PIPS?|\d{3,6}(?:\.\d+)?))')
 _MARKET_NOW = re.compile(
     r'^\s*(?:(?:GOLD|XAUUSD)\s+)?(BUY|SELL|SEL)\s+NOW'
-    r'(?P<levels>(?:\s+TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?){0,2})\s*[.!‼️]*\s*$', re.I
+    r'(?P<levels>(?:\s+' + _LEVEL + r'){0,3})\s*[.!‼️]*\s*$', re.I
 )
 _UZ_PERSONAL_ENTRY = re.compile(
     r'^\s*(?:(?:GOLD|XAUUSD)\s+)?(?:'
     r'(?P<side_first>SELLDAMAN|SELDAMAN|BUYDAMAN)\s*(?P<zone_after>\d{1,5}\s*[-–—]\s*\d{1,5})'
     r'|(?P<zone_before>\d{1,5}\s*[-–—]\s*\d{1,5})\s*(?P<side_last>SELLDAMAN|SELDAMAN|BUYDAMAN)'
     r')(?:\s*kirsangiz\s+bo[\'‘’]?ladi)?'
-    r'(?P<levels>(?:\s+TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?){0,2})\s*[.!‼️✅]*\s*$', re.I
+    r'(?P<levels>(?:\s+' + _LEVEL + r'){0,3})\s*[.!‼️✅]*\s*$', re.I
 )
 
 
@@ -62,7 +68,8 @@ def _expand_suffix(raw: str, reference: float) -> int | None:
 
 
 def _target(raw: str, zone: tuple[float, float], side: str, previous: float | None) -> float | None:
-    if '.' in raw or len(raw) >= 4:
+    explicit = '.' in raw or len(raw) >= 4
+    if explicit:
         candidates = [float(raw)]
     else:
         modulus = 10 ** len(raw)
@@ -70,16 +77,44 @@ def _target(raw: str, zone: tuple[float, float], side: str, previous: float | No
         base = int(mid // modulus) * modulus + int(raw)
         candidates = [float(base + i * modulus) for i in (-2, -1, 0, 1, 2)]
     low, high = zone
+    # Full absolute prices do not need century expansion. The channel has
+    # published a distant 3750 TP for a 3914-3919 entry; retain a bounded
+    # sanity check while accepting that observed format.
+    max_distance = 250 if explicit else 100
     if side == 'buy':
-        viable = [x for x in candidates if x > high and x - high <= 100 and (previous is None or x > previous)]
+        viable = [x for x in candidates if x > high and x - high <= max_distance and (previous is None or x > previous)]
     else:
-        viable = [x for x in candidates if 0 < x < low and low - x <= 100 and (previous is None or x < previous)]
+        viable = [x for x in candidates if 0 < x < low and low - x <= max_distance and (previous is None or x < previous)]
     return viable[0] if len(viable) == 1 else None
 
 
 def target_count(text: str) -> int:
     """Count explicit TP prices without interpreting the price or taking action."""
     return len(_TARGET.findall(text or ""))
+
+
+def channel_stop(text: str) -> tuple[float | None, float | None]:
+    """Read an explicit stop price or pip distance, rejecting ambiguous levels."""
+    pip_matches = list(_SL_PIPS.finditer(text or ''))
+    price_matches = [m for m in _SL.finditer(text or '')
+                     if not any(m.start() == p.start() for p in pip_matches)]
+    if len(pip_matches) + len(price_matches) > 1:
+        raise ValueError('ambiguous_stop')
+    pips = float(pip_matches[0].group(1)) if pip_matches else None
+    stop = float(price_matches[0].group(1)) if price_matches else None
+    if pips is not None and not 0 < pips <= 1000:
+        raise ValueError('invalid_stop_distance')
+    if stop is not None and (not math.isfinite(stop) or stop <= 0):
+        raise ValueError('invalid_stop_price')
+    return stop, pips
+
+
+def stop_only_post(text: str) -> tuple[float | None, float | None] | None:
+    """Accept a standalone SL only when it is the whole reply, without extra instructions."""
+    value = (text or '').strip()
+    if not re.fullmatch(r'SL\s*[:=]?\s*(?:\d+(?:\.\d+)?\s*PIPS?|\d{3,6}(?:\.\d+)?)\s*[.!‼️✅]*', value, re.I):
+        return None
+    return channel_stop(value)
 
 
 def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
@@ -107,6 +142,9 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
     """Interpret a channel post without authorizing a trade or guessing absent SL."""
     text = text or ''
     lower = text.lower()
+    if _REENTRY_ANNOUNCEMENT.fullmatch(text):
+        # "Stop hit, I will give a re-entry": an announcement, not an order.
+        return GoldZonePost('ignored', action='reentry_announced')
     if re.search(r'\bb\s*/\s*u\b|bezubit|bezub', lower):
         return GoldZonePost('management', action='break_even_request')
     if re.search(r'\byop(?:ing|ish|dik|ildi|amiz|inglar)?\b|\byoping\b', lower):
@@ -125,10 +163,16 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
     if market:
         side = 'buy' if market.group(1).lower() == 'buy' else 'sell'
         raw_targets = _TARGET.findall(market.group('levels'))
-        if not raw_targets:
-            return GoldZonePost('entry', side=side, action='market_now')
+        try:
+            stop, pips = channel_stop(market.group('levels'))
+        except ValueError as exc:
+            return GoldZonePost('invalid', side=side, reason=str(exc))
+        if not raw_targets and stop is None:
+            return GoldZonePost('entry', side=side, sl_pips=pips, action='market_now')
         if isinstance(quote, bool) or not isinstance(quote, (int, float)) or not math.isfinite(quote) or not 100 <= quote <= 10000:
             return GoldZonePost('invalid', side=side, reason='missing_or_invalid_gold_quote')
+        if stop is not None and not (stop < quote if side == 'buy' else stop > quote):
+            return GoldZonePost('invalid', side=side, reason='contradictory_stop')
         reference = (float(quote), float(quote))
         targets: list[float] = []
         for raw in raw_targets:
@@ -136,7 +180,7 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
             if target is None:
                 return GoldZonePost('invalid', side=side, reason='ambiguous_or_contradictory_target')
             targets.append(target)
-        return GoldZonePost('entry', side=side, targets=tuple(targets), action='market_now')
+        return GoldZonePost('entry', side=side, targets=tuple(targets), sl=stop, sl_pips=pips, action='market_now')
     sides = list(_SIDE.finditer(text))
     zones = list(_RANGE.finditer(text))
     if not sides or not zones:
@@ -161,14 +205,10 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
         targets.append(target)
     if len(targets) > 4:
         return GoldZonePost('invalid', side=side, zone=zone, reason='excess_targets')
-    pip_matches = list(_SL_PIPS.finditer(text))
-    stop_matches = [m for m in _SL.finditer(text) if not any(m.start() == p.start() for p in pip_matches)]
-    if len(pip_matches) + len(stop_matches) > 1:
-        return GoldZonePost('invalid', side=side, zone=zone, reason='ambiguous_stop')
-    pips = float(pip_matches[0].group(1)) if pip_matches else None
-    stop = float(stop_matches[0].group(1)) if stop_matches else None
-    if pips is not None and not 0 < pips <= 1000:
-        return GoldZonePost('invalid', side=side, zone=zone, reason='invalid_stop_distance')
+    try:
+        stop, pips = channel_stop(text)
+    except ValueError as exc:
+        return GoldZonePost('invalid', side=side, zone=zone, reason=str(exc))
     if stop is not None and not (stop < zone[0] if side == 'buy' else stop > zone[1]):
         return GoldZonePost('invalid', side=side, zone=zone, reason='contradictory_stop')
     return GoldZonePost('entry', side=side, zone=zone, targets=tuple(targets), sl=stop, sl_pips=pips)

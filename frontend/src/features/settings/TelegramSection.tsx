@@ -10,6 +10,7 @@ import {
   tgLogout,
   tgPassword,
   tgSendCode,
+  tgSetAutoReactions,
   tgSignIn,
 } from '@/api/client';
 import { DialogPicker } from '@/components/DialogPicker';
@@ -31,6 +32,7 @@ import {
   SectionCommonProps,
   SUB_BOX,
   TextField,
+  ToggleRow,
   toInt,
   useAsyncAction,
 } from './shared';
@@ -85,6 +87,7 @@ export function TelegramSection(props: SectionCommonProps): ReactElement {
   const [dialogsError, setDialogsError] = useState<string | null>(null);
 
   const action = useAsyncAction(t);
+  const reactionAction = useAsyncAction(t);
 
   // `t` changes identity on every locale switch. Held in a ref, the fetchers
   // below keep a stable identity, so flipping the language does not re-issue a
@@ -382,6 +385,20 @@ export function TelegramSection(props: SectionCommonProps): ReactElement {
           {action.error}
         </p>
       ) : null}
+
+      <ToggleRow
+        id={`${uid}-auto-reactions`}
+        label={t('settings.auto_reactions')}
+        checked={Boolean(slice.auto_reactions_enabled)}
+        disabled={reactionAction.busy}
+        hint={t('settings.auto_reactions_hint')}
+        onChange={(enabled) => reactionAction.run(async () => {
+          await tgSetAutoReactions(enabled);
+          await reload();
+        })}
+      />
+      {reactionAction.busy ? <p role="status">{t('app.saving')}</p> : null}
+      {reactionAction.error ? <p className="field__error" role="alert">{reactionAction.error}</p> : null}
 
       {authorized ? (
         <DialogPicker

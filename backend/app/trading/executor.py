@@ -494,6 +494,7 @@ class _Plan:
     runner_tp_bias: int | None = None
     suggested_runner_tp_index: int | None = None
     chosen_runner_tp_index: int | None = None
+    channel_stop_pips: float | None = None
 
     def summary(self) -> dict[str, Any]:
         """Render the plan as the JSON the model reads, with every distance in three units."""
@@ -1872,7 +1873,8 @@ class Executor:
                 zone = first_id[1:] if first_id[1] is not None else None
                 def base_text(text: str) -> str:
                     without_targets = re.sub(r'\bTP\s*[:=]?\s*\d{1,6}(?:\.\d+)?\b', '', text, flags=re.I)
-                    return ' '.join(without_targets.lower().split())
+                    without_levels = re.sub(r'\bSL\s*[:=]?\s*\d+(?:\.\d+)?(?:\s*PIPS?)?\b', '', without_targets, flags=re.I)
+                    return ' '.join(without_levels.lower().split())
                 original_base = base_text(str(row.text or ""))
                 for revision in revisions:
                     identity = entry_identity(str(revision.text or ""))
@@ -1940,7 +1942,12 @@ class Executor:
                 return "gold channel entry refused: " + candidate.reason
             if candidate.side != plan.side or len(plan.legs) != 2 or tuple(leg.volume for leg in plan.legs) != candidate.lots:
                 return "gold channel side or split no longer matches the verified signal"
-            if tuple(leg.tp for leg in plan.legs) != (candidate.targets or (0.0, 0.0)):
+            if candidate.targets:
+                if tuple(leg.tp for leg in plan.legs) != candidate.targets:
+                    return "gold channel targets no longer match the verified signal"
+            elif (len(plan.legs) != 2 or plan.legs[1].tp != 0.0 or
+                  abs(plan.legs[0].tp - pricing.one_r_take_profit(
+                      plan.ref, plan.side, plan.entry, plan.sl)) > plan.ref.point):
                 return "gold channel targets no longer match the verified signal"
             if candidate.stop is None or abs(float(plan.sl) - candidate.stop) > 0.5:
                 return "gold channel quote moved; fixed stop can no longer be verified"
@@ -2000,10 +2007,17 @@ class Executor:
             if refusal is not None:
                 return refusal
             assert plan is not None
+            if proposal.channel_stop_pips is not None:
+                if abs(float(ref.pip_size) - 0.1) > 1e-9:
+                    return _refuse("gold pip convention does not match the configured 0.10 price units", stage="channel_profile")
+                plan.channel_stop_pips = proposal.channel_stop_pips
             if not proposal.targets:
-                plan.legs = [_Leg(index=0, volume=proposal.lots[0], tp=0.0),
+                cover_tp = pricing.one_r_take_profit(plan.ref, plan.side, plan.entry, plan.sl)
+                plan.legs = [_Leg(index=0, volume=proposal.lots[0], tp=cover_tp),
                              _Leg(index=1, volume=proposal.lots[1], tp=0.0)]
                 plan.runner_mode = MODE_BE_AFTER_TP1
+                plan.tps = [cover_tp]
+                plan.notes.append("No channel targets: first position targets 1R; runner has no TP.")
             failure = await self._uz_gold_entry_guard(work, plan)
             if failure:
                 if failure == "gold channel targets no longer match the verified signal":
@@ -2020,7 +2034,9 @@ class Executor:
             refusal = await self._check_margin(plan)
             if refusal is not None:
                 return refusal
-            result = await self._execute_plan(work, plan, reason="verified gold channel with fixed 15 price-unit SL")
+            result = await self._execute_plan(work, plan, reason=(
+                "verified gold channel with supplied SL" if proposal.channel_stop_supplied else
+                "verified gold channel with fallback SL"))
             if result.get("safety_failures") or result.get("partial_fill") or (result.get("ok") and result.get("failures")):
                 await self.runtime.set_armed(False)
                 detail = "Gold channel fill or stop could not be verified; trading disabled. Check positions."
@@ -2050,7 +2066,7 @@ class Executor:
     @_serialize_broker_write
     async def update_uz_gold_signal(self, ctx: RunContext) -> dict[str, Any]:
         """Apply two targets or a break-even request to the exact tracked signal only."""
-        from app.ai.uz_gold_zone import entry_identity, parse_uz_gold_post, target_count
+        from app.ai.uz_gold_zone import entry_identity, parse_uz_gold_post, stop_only_post, target_count
         from app.trading.symbols import _strip_suffix
         try:
             try:
@@ -2109,12 +2125,44 @@ class Executor:
                 reference = float(trades[0].entry_price)
                 before = parse_uz_gold_post(str(original.text or ""), quote=reference)
                 after = parse_uz_gold_post(str(row.text or ""), quote=reference)
+                if row.reply_to_message_id is not None and before.kind == "entry":
+                    stop_reply = stop_only_post(str(row.text or ""))
+                    if stop_reply is not None:
+                        after = replace(before, targets=(), sl=stop_reply[0], sl_pips=stop_reply[1])
+                family = await guards.family_message_ids(session, original.source_id, original.message_id)
+                earlier = (await session.execute(select(Message.text).where(
+                    Message.source_id == original.source_id, Message.message_id.in_(family),
+                    Message.id < row.id,
+                ))).scalars().all()
+                prior_channel_targets = any(target_count(text or "") for text in earlier)
+                trailing = await profit_trailing_config(session)
+                enrolled = False
+                try:
+                    posted = original.posted_at.replace(tzinfo=timezone.utc).timestamp()
+                    start = float(trailing["start_ts"])
+                    grandfathered = (not trailing.get("legacy") and
+                                     posted >= float(trailing.get("legacy_start_ts", start)) and
+                                     trades[0].source_id == trailing.get("legacy_source_id") and
+                                     str(trades[0].symbol).upper().startswith("XAUUSD"))
+                    enrolled = (trailing.get("enabled") is True and
+                                (posted >= start or grandfathered) and
+                                (not trailing.get("legacy") or
+                                 trades[0].source_id == trailing.get("source_id")))
+                except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+                    pass
+                first_closed_at_tp = (await session.execute(select(Trade.id).where(
+                    Trade.signal_ref == trades[0].signal_ref, Trade.source_id == row.source_id,
+                    Trade.split_index == 0, Trade.split_count == 2,
+                    Trade.status == "closed", Trade.close_cause == "tp",
+                    Trade.external.is_(False),
+                ).limit(1))).scalar_one_or_none() is not None
             if before.kind != "entry" or before.side is None:
                 return _refuse("original signal cannot be verified", stage="channel_profile")
             if not is_be:
                 if (after.kind != "entry" or after.side != before.side
                         or (before.zone is not None and after.zone != before.zone)
-                        or len(after.targets) != 2):
+                        or len(after.targets) not in (0, 2)
+                        or (not after.targets and after.sl is None and after.sl_pips is None)):
                     return _refuse("updated targets conflict with the original signal", stage="channel_profile")
             work = replace(ctx, signal_ref=trades[0].signal_ref, origin="uz_gold_management", bypass_arm=True)
             changed, unchanged, failures = [], [], []
@@ -2144,28 +2192,81 @@ class Executor:
                     index = int(trade.split_index)
                     if index not in (0, 1):
                         failures.append("position split index is invalid"); continue
-                    target = float(after.targets[index])
                     entry = float(position.price_open)
+                    existing_sl = float(position.sl or 0.0)
+                    stop_changed = False
+                    if after.sl is not None or after.sl_pips is not None:
+                        ref = await self.resolver.get(str(position.symbol))
+                        if after.sl_pips is not None:
+                            if abs(float(ref.pip_size) - 0.1) > 1e-9:
+                                failures.append("gold pip convention does not match 0.10 price units")
+                                continue
+                            stop = entry - after.sl_pips * 0.1 if side == "buy" else entry + after.sl_pips * 0.1
+                        else:
+                            stop = float(after.sl)
+                        stop = pricing.round_stop_away(ref, stop, side, "sl")
+                        protected = pricing.stop_is_at_or_beyond_breakeven(side, entry, existing_sl)
+                        would_loosen = ((side == "buy" and stop < existing_sl) or
+                                        (side == "sell" and stop > existing_sl))
+                        if not (protected and would_loosen) and abs(existing_sl - stop) > 1e-8:
+                            result = await self.modify_position(work, ticket=int(position.ticket), sl=stop,
+                                                                reason="channel stop added to existing position", notify=False)
+                            if not result.get("ok"):
+                                failures.append(str(result.get("message") or "broker refused stop update"))
+                                continue
+                            checked, missing = await self._find_position(int(position.ticket))
+                            if missing is not None or checked is None or abs(float(checked.sl or 0) - stop) > max(ref.point, 1e-8):
+                                if checked is not None:
+                                    await self._update_trade(int(position.ticket), sl=float(checked.sl or 0),
+                                                             tp=float(checked.tp or 0))
+                                failures.append("channel stop update could not be verified")
+                                continue
+                            stop_changed = True
+                    if not after.targets:
+                        if stop_changed and index == 0 and not prior_channel_targets:
+                            old_1r = pricing.one_r_take_profit(ref, side, entry, existing_sl)
+                            if abs(float(position.tp or 0) - old_1r) <= max(ref.point, 1e-8):
+                                new_1r = pricing.one_r_take_profit(ref, side, entry, stop)
+                                retarget = await self.modify_position(work, ticket=int(position.ticket), tp=new_1r,
+                                    reason="adjust automatic 1R to channel stop", notify=False)
+                                if not retarget.get("ok"):
+                                    failures.append(str(retarget.get("message") or "broker refused 1R target update"))
+                                    continue
+                        if stop_changed:
+                            changed.append(int(position.ticket))
+                        else:
+                            unchanged.append(int(position.ticket))
+                        continue
+                    # Once TP1 has closed, an enrolled trailing runner must not
+                    # have TP2 restored by a late channel edit.
+                    if (index == 1 and first_closed_at_tp and enrolled and
+                            float(position.tp or 0) == 0 and
+                            pricing.stop_is_at_or_beyond_breakeven(
+                                side, float(position.price_open), float(position.sl or 0))):
+                        (changed if stop_changed else unchanged).append(int(position.ticket)); continue
+                    target = float(after.targets[index])
                     if (side == "buy" and target <= entry) or (side == "sell" and target >= entry):
                         failures.append("target is not profitable relative to the actual entry")
                         continue
                     if abs(float(position.tp or 0.0) - target) < 1e-8:
-                        unchanged.append(int(position.ticket)); continue
+                        (changed if stop_changed else unchanged).append(int(position.ticket)); continue
                     result = await self.modify_position(work, ticket=int(position.ticket), tp=target,
                                                         reason="channel targets added to existing positions", notify=False)
                 if result.get("ok"):
                     changed.append(int(position.ticket))
                 else:
                     failures.append(str(result.get("message") or "broker refused update"))
-            action = "break_even" if is_be else "attach_targets"
+            action = "break_even" if is_be else "channel_levels"
             if failures:
                 return _refuse("channel update incomplete: " + failures[0], stage="channel_profile",
                                action=action, updated=changed, unchanged=unchanged)
             message = ("Break-even applied to matching positions." if is_be else
-                       "Channel targets applied to the existing positions.")
+                       "Channel levels applied to the existing positions.")
             if changed:
                 detail = ("Break-even" if is_be else
-                          f"TP1 {after.targets[0]}, TP2 {after.targets[1]}")
+                          ", ".join(([f"SL {after.sl}"] if after.sl is not None else
+                                     [f"SL {after.sl_pips} pips from each entry"] if after.sl_pips is not None else []) +
+                                    ([f"TP1 {after.targets[0]}, TP2 {after.targets[1]}"] if after.targets else [])))
                 rendered = self._render("render_modified", symbol=str(trades[0].symbol),
                                         side=before.side, tickets=changed, breakeven=is_be,
                                         detail=detail, signal_ref=trades[0].signal_ref)
@@ -3508,8 +3609,11 @@ class Executor:
                     if (int(position.magic) != int(self.settings.MAGIC_NUMBER)
                             or str(position.symbol).upper() != ref.name.upper() or side != plan.side
                             or broker_sl <= 0 or actual <= 0
-                            or abs(abs(actual - broker_sl) - 15.0) > 0.5):
-                        safety_failures.append("broker position or its 15-unit stop could not be verified")
+                            or (side == "buy" and broker_sl >= actual)
+                            or (side == "sell" and broker_sl <= actual)
+                            or abs(actual - float(plan.entry)) > 0.5
+                            or abs(broker_sl - float(plan.sl)) > max(ref.point, 1e-8)):
+                        safety_failures.append("broker position or its requested stop could not be verified")
             if ctx.origin == "uz_gold" and (not leg.result.ok or leg.result.partial or safety_failures):
                 for remaining in plan.legs[leg_index + 1:]:
                     remaining.refusal = "earlier leg was rejected, incomplete or uncertain; no further order was sent"
@@ -3539,8 +3643,61 @@ class Executor:
             if ctx.origin == "uz_gold" and trade_id is None:
                 safety_failures.append("filled position could not be recorded for later management")
 
+        # Initial pip stops are placed with the order against the quote, then
+        # corrected to each actual fill. The broker holds a protective stop
+        # throughout; a failed correction is reported as a safety failure.
+        if ctx.origin == "uz_gold" and plan.channel_stop_pips is not None:
+            work = replace(ctx, origin="uz_gold_management", bypass_arm=True)
+            for leg in opened:
+                position, missing = await self._find_position(leg.result.ticket if leg.result else None)
+                if missing is not None or position is None:
+                    safety_failures.append("channel pip stop position could not be verified")
+                    continue
+                actual = float(position.price_open or 0)
+                current = float(position.sl or 0)
+                side = POSITION_TYPE_NAMES.get(int(position.type), "")
+                if (side != plan.side or str(position.symbol).upper() != ref.name.upper()
+                        or int(position.magic) != int(self.settings.MAGIC_NUMBER)
+                        or actual <= 0 or current <= 0):
+                    safety_failures.append("channel pip stop position identity could not be verified")
+                    continue
+                desired = actual - plan.channel_stop_pips * 0.1 if side == "buy" else actual + plan.channel_stop_pips * 0.1
+                desired = pricing.round_stop_away(ref, desired, side, "sl")
+                protected = pricing.stop_is_at_or_beyond_breakeven(side, actual, current)
+                loosens = (side == "buy" and desired < current) or (side == "sell" and desired > current)
+                if protected and loosens:
+                    continue
+                if abs(current - desired) > max(ref.point / 2, 1e-8):
+                    adjusted = await self.modify_position(work, ticket=int(position.ticket), sl=desired,
+                        reason="channel pip stop from actual fill", notify=False)
+                    if not adjusted.get("ok"):
+                        safety_failures.append("channel pip stop could not be applied to actual fill")
+                        continue
+                    checked, missing = await self._find_position(int(position.ticket))
+                    if missing is not None or checked is None or abs(float(checked.sl or 0) - desired) > max(ref.point, 1e-8):
+                        if checked is not None:
+                            await self._update_trade(int(position.ticket), sl=float(checked.sl or 0),
+                                                     tp=float(checked.tp or 0))
+                        safety_failures.append("channel pip stop could not be verified after adjustment")
+
         if opened and not plan.pending and plan.kind == "ladder" and float(plan.sl or 0.0) > 0.0:
             await self._retarget_ladder_cover_from_fills(ctx, plan)
+        if ctx.origin == "uz_gold" and not safety_failures and len(plan.legs) == 2 and plan.legs[1].tp == 0 and opened:
+            leg = plan.legs[0]
+            if leg.ok and leg.result and leg.result.ticket:
+                position, missing = await self._find_position(leg.result.ticket)
+                if missing is not None or position is None:
+                    safety_failures.append("1R position could not be verified")
+                else:
+                    target = pricing.one_r_take_profit(ref, plan.side, float(position.price_open), float(position.sl))
+                    if abs(float(position.tp or 0) - target) >= 10 ** (-max(ref.digits, 0)):
+                        adjusted = await self.modify_position(ctx, ticket=int(position.ticket), tp=target,
+                                                              reason="gold cover 1R from fill", notify=False)
+                        if adjusted.get("ok"):
+                            leg.tp = target
+                            plan.tps = [target]
+                        else:
+                            safety_failures.append("1R target from the actual fill could not be applied")
 
         tickets = [leg.result.ticket for leg in opened if leg.result and leg.result.ticket]
         filled_volume = round(

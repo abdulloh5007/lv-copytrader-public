@@ -62,6 +62,7 @@ from app.crypto import MASK
 from app.db import get_setting, session_scope, set_setting
 from app.errors import ConfigError, IngestError
 from app.models import Source
+from app.telegram.reactions import AutoReactions
 from app.util.logging import get_logger, register_secret
 
 if TYPE_CHECKING:  # pragma: no cover - type checkers only, never imported at runtime
@@ -322,6 +323,7 @@ class TelegramService:
         self._album_done: dict[int, float] = {}
 
         self._entity_cache: dict[int, Any] = {}
+        self.auto_reactions = AutoReactions(self)
 
     # ---- wiring -----------------------------------------------------------------------
 
@@ -1033,6 +1035,7 @@ class TelegramService:
             return
 
         self._active_source_id, self._active_chat_id, title = active
+        await self.auto_reactions.refresh()
 
         # No `chats=` filter on purpose. Telethon resolves that filter lazily on the first
         # update, inside a dispatch path that does not log resolution failures — a private
@@ -1079,6 +1082,7 @@ class TelegramService:
             except Exception as exc:  # noqa: BLE001 - removal must not raise
                 log.warning("telegram_handler_remove_failed error=%s", exc)
         self._handlers.clear()
+        self.auto_reactions.cancel()
         self._cancel_album_timers()
         self._album_pending.clear()
         self._album_done.clear()
@@ -1140,6 +1144,7 @@ class TelegramService:
         message = getattr(event, "message", None)
         if message is None:
             return
+        self.queue_auto_reaction(message)
         if getattr(message, "grouped_id", None):
             # Album members are *also* delivered as individual NewMessage updates, so handing
             # each one over would store one row per photo instead of one message with N images.
@@ -1169,6 +1174,7 @@ class TelegramService:
         message = getattr(event, "message", None)
         if message is None:
             return
+        self.queue_auto_reaction(message)
         ingestor = self._ingestor()
         if ingestor is None:
             self._warn("ingestor_unavailable", handler="message_edited")
@@ -1200,6 +1206,8 @@ class TelegramService:
         messages = list(getattr(event, "messages", None) or ())
         if not messages:
             return
+        for message in messages:
+            self.queue_auto_reaction(message)
         grouped_id = getattr(messages[0], "grouped_id", None)
         merged = self._merge_album(grouped_id, messages)
         # Telethon always sets grouped_id on Album members, but when it is absent the
@@ -1215,6 +1223,13 @@ class TelegramService:
             self._warn("ingestor_unavailable", handler="album")
             return
         await ingestor.handle_message(merged[0], album=merged)
+
+    def queue_auto_reaction(self, message: Any) -> None:
+        """Queue without delaying or affecting the signal handler."""
+        try:
+            self.auto_reactions.enqueue(message)
+        except Exception as exc:  # noqa: BLE001 - never block signal ingestion
+            log.warning("auto_reaction_enqueue_failed error=%s", type(exc).__name__)
 
     async def _handle_chat_action(self, event: Any) -> None:
         """Record a service message; §3.2 requires them stored, not dropped."""

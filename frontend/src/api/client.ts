@@ -321,6 +321,7 @@ export interface TelegramSettingsOut {
   authorized: boolean;
   user: TelegramUserOut | null;
   source: SourceOut | null;
+  auto_reactions_enabled: boolean;
 }
 
 /** What a model can actually do — declared by the provider or probed once, then cached. */
@@ -2171,6 +2172,11 @@ export function tgLogout(options?: RequestOptions): Promise<OkResponse> {
 /** `GET /api/telegram/status` — connection, authorization, the account and the active source. */
 export function tgStatus(options?: RequestOptions): Promise<TelegramStatusOut> {
   return get<TelegramStatusOut>('/telegram/status', options);
+}
+
+/** Toggle free automatic reactions on newly received posts from the selected source. */
+export function tgSetAutoReactions(enabled: boolean, options?: RequestOptions): Promise<{ ok: boolean; enabled: boolean }> {
+  return put('/telegram/auto-reactions', { enabled }, options);
 }
 
 /** `GET /api/telegram/dialogs` — the channels this account can read, for the picker. */

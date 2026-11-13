@@ -635,6 +635,25 @@ class TelegramSettingsOut(OutModel):
     has_session: bool = False
     user: TelegramUserOut | None = None
     source: SourceOut | None = None
+    auto_reactions_enabled: bool = False
+
+
+class AutoReactionsSettings(RequestModel):
+    """Enable or disable automatic reactions for future active-channel posts."""
+
+    enabled: bool = Field(strict=True)
+
+
+class AutoReactionsOut(OutModel):
+    ok: bool = True
+    enabled: bool
+
+
+class AutoReactionsCheckOut(OutModel):
+    ok: bool
+    enabled: bool
+    available: int
+    message: str
 
 
 class CapabilitiesOut(OutModel):

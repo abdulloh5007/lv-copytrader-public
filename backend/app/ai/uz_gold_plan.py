@@ -20,6 +20,7 @@ class GoldEntryPlan:
     targets: tuple[float, ...] = ()
     lots: tuple[float, ...] = ()
     channel_stop_supplied: bool = False
+    channel_stop_pips: float | None = None
 
 
 def plan_gold_entry(
@@ -76,12 +77,17 @@ def plan_gold_entry(
             raise ValueError('two equal legal legs required')
     except (InvalidOperation, ValueError):
         return GoldEntryPlan('reject', reason='invalid_two_leg_volume')
-    stop = entry - stop_distance if post.side == 'buy' else entry + stop_distance
+    distance = post.sl_pips * 0.1 if post.sl_pips is not None else stop_distance
+    stop = (post.sl if post.sl is not None else
+            entry - distance if post.side == 'buy' else entry + distance)
     if stop <= 0:
         return GoldEntryPlan('reject', reason='invalid_stop')
+    if (post.side == 'buy' and stop >= entry) or (post.side == 'sell' and stop <= entry):
+        return GoldEntryPlan('reject', reason='channel_stop_not_protective')
     return GoldEntryPlan('open', side=post.side, zone=post.zone, entry=entry, stop=stop,
                          targets=post.targets, lots=(float(half), float(half)),
-                         channel_stop_supplied=post.sl is not None or post.sl_pips is not None)
+                         channel_stop_supplied=post.sl is not None or post.sl_pips is not None,
+                         channel_stop_pips=post.sl_pips)
 
 
 async def wait_for_gold_entry(attempt, *, wait_seconds: float, sleep=None, monotonic=None):

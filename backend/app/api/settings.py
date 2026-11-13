@@ -474,6 +474,7 @@ async def _telegram_section(session: AsyncSession, runtime: Runtime) -> Telegram
         except Exception as exc:  # noqa: BLE001 - a stale cached account is not fatal
             log.warning("telegram_user_ignored error=%s", _one_line(exc))
 
+    reactions = await get_setting(session, "tg.auto_reactions", {})
     return TelegramSettingsOut(
         api_id=api_id,
         api_hash=MASK if stored_hash else None,
@@ -483,6 +484,7 @@ async def _telegram_section(session: AsyncSession, runtime: Runtime) -> Telegram
         has_session=await has_value(session, "tg.session"),
         user=user,
         source=await _active_source(session),
+        auto_reactions_enabled=isinstance(reactions, dict) and reactions.get("enabled") is True,
     )
 
 

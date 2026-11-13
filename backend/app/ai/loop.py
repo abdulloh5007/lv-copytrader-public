@@ -1727,7 +1727,7 @@ class _AgentRun:
 
     async def _run_uz_gold_signal(self, row: Message | None) -> dict[str, Any]:
         """Run the enabled gold policy with scoped deterministic broker operations."""
-        from app.ai.uz_gold_zone import entry_identity, parse_uz_gold_post, target_count
+        from app.ai.uz_gold_zone import channel_stop, entry_identity, parse_uz_gold_post, target_count
         if row is None:
             return await self._finalize(STATUS_ERROR, error="gold channel message missing")
         text = str(row.text or "")
@@ -1736,9 +1736,8 @@ class _AgentRun:
                          message_row_id=self.message_row_id, origin="agent")
         is_be = parsed.kind == "management" and parsed.action == "break_even_request"
         if parsed.kind == "management" and parsed.action in {"close_request", "reentry_request"}:
-            await self.runtime.set_armed(False)
             reason = ("Channel requested a close or re-entry that is not configured for automatic action. "
-                      "Trading was disabled; inspect the signal and open positions.")
+                      "No action was taken; inspect the signal and open positions.")
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_manual_review", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         identity = entry_identity(text)
@@ -1757,7 +1756,14 @@ class _AgentRun:
                 from dataclasses import replace
                 ctx = replace(ctx, first_observed_edit=True)
         is_targets = not first_observed_edit and bool(row.edit_date or row.reply_to_message_id) and target_count(text) == 2
-        if is_be or is_targets:
+        is_stop = False
+        if not first_observed_edit and (row.edit_date or row.reply_to_message_id):
+            try:
+                stop_price, stop_pips = channel_stop(text)
+            except ValueError:
+                return await self._finalize(STATUS_ERROR, error="Ambiguous channel stop; existing positions were not changed.")
+            is_stop = stop_price is not None or stop_pips is not None
+        if is_be or is_targets or is_stop:
             result = await self.runtime.executor.update_uz_gold_signal(ctx)
             await self._add_step("tool_result", name="gold_channel_update", payload={"result": result},
                                  ok=bool(result.get("ok")))
@@ -1767,8 +1773,7 @@ class _AgentRun:
             reason = str(result.get("message") or "channel update was not applied")
             if result.get("code") == "superseded_no_exposure" or "no live positions match" in reason:
                 return await self._finalize(STATUS_FINISHED, decision="ignored", summary=reason)
-            await self.runtime.set_armed(False)
-            reason += " Automatic trading was disabled; inspect the channel and positions."
+            reason += " Check the channel and positions; the trading switch was not changed."
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_update_failed", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         if (row.edit_date and not first_observed_edit) or row.reply_to_message_id or identity is None:

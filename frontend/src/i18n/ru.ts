@@ -551,6 +551,8 @@ export const ru: Record<TranslationKey, string> = {
   // ── настройки ─────────────────────────────────────────────────────────────
   'settings.title': 'Настройки',
   'settings.telegram_section': 'Аккаунт Telegram',
+  'settings.auto_reactions': 'Автоматические реакции',
+  'settings.auto_reactions_hint': 'Ставить от твоего Telegram-аккаунта случайную доступную бесплатную реакцию на новые посты выбранного канала. Реакции, поставленные вручную, сохраняются.',
   'settings.mt5_section': 'Счёт MetaTrader 5',
   'settings.provider_section': 'Провайдер ИИ',
   'settings.notifier_section': 'Бот уведомлений',

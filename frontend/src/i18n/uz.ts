@@ -218,6 +218,8 @@ export const uz: Record<TranslationKey, string> = {
   "settings.help": "Qanday ishlaydi",
   "settings.title": "Sozlamalar",
   "settings.telegram_section": "Telegram hisobi",
+  "settings.auto_reactions": "Avtomatik reaksiyalar",
+  "settings.auto_reactions_hint": "Tanlangan kanalning yangi postlariga Telegram akkauntingizdan tasodifiy mavjud bepul reaksiya qo‘yiladi. Qo‘lda qo‘yilgan reaksiyalar saqlanadi.",
   "settings.mt5_section": "MetaTrader 5 hisobi",
   "settings.provider_section": "Sun’iy intellekt provayderi",
   "settings.notifier_section": "Xabarnoma boti",

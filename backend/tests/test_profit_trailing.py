@@ -10,12 +10,14 @@ from app.trading.executor import RunContext
 from tests.test_executor import _build
 
 
-async def setup_trade(data_dir, side):
+async def setup_trade(data_dir, side, *, without_targets=False):
     executor, broker, _ = await _build(data_dir, armed=True)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     chat = -1005555555555
     text = ('81-78 buy zone TP 84 TP 99' if side == 'buy'
             else '78-81 sell zone TP 76 TP 61')
+    if without_targets:
+        text = '81-78 buy zone' if side == 'buy' else '78-81 sell zone'
     async with session_scope() as s:
         source = Source(kind='telegram', chat_id=chat, title='gold', username=None,
                         entity_type='channel', is_active=True)
@@ -41,6 +43,55 @@ async def setup_trade(data_dir, side):
         rows = list((await s.execute(select(Trade).order_by(Trade.split_index))).scalars().all())
     assert len(rows) == 2
     return executor, broker, rows[0].ticket, rows[1].ticket, cfg
+
+
+@pytest.mark.parametrize('side', ['buy', 'sell'])
+async def test_targetless_signal_uses_1r_then_breakeven_and_trailing(data_dir, side):
+    ex, broker, cover, runner, _ = await setup_trade(data_dir, side, without_targets=True)
+    first = broker.positions[cover]
+    assert first['tp'] > 0 and broker.positions[runner]['tp'] == 0
+    assert abs(abs(first['tp'] - first['price_open']) - abs(first['price_open'] - first['sl'])) < .01
+    target = first['tp']
+    broker.move('XAUUSDm', target + 1 if side == 'buy' else target - 1)
+    del broker.positions[cover]
+    async with session_scope() as s:
+        row = (await s.execute(select(Trade).where(Trade.ticket == cover))).scalars().one()
+        row.status = 'closed'; row.close_cause = 'tp'
+    await ex.trail_after_tp1()
+    be = broker.positions[runner]['sl']
+    entry = broker.positions[runner]['price_open']
+    assert (be >= entry if side == 'buy' else be <= entry)
+    broker.move('XAUUSDm', target + 8 if side == 'buy' else target - 8)
+    await ex.trail_profit()
+    moved = broker.positions[runner]['sl']
+    assert (moved > be if side == 'buy' else moved < be)
+    assert broker.positions[runner]['tp'] == 0
+
+
+@pytest.mark.parametrize('stop', ['', ' SL 40pips'])
+async def test_late_channel_targets_do_not_restore_tp_after_trailing_starts(data_dir, stop):
+    ex, broker, cover, runner, _ = await setup_trade(data_dir, 'buy', without_targets=True)
+    target = broker.positions[cover]['tp']
+    broker.move('XAUUSDm', target + 1)
+    del broker.positions[cover]
+    async with session_scope() as s:
+        first = (await s.execute(select(Trade).where(Trade.ticket == cover))).scalars().one()
+        first.status = 'closed'; first.close_cause = 'tp'
+        original = await s.get(Message, first.message_row_id)
+        edit = Message(source_id=original.source_id, message_id=original.message_id, revision=2,
+                       edit_date=1, kind='text', status='pending',
+                       text='81-78 buy zone TP 84 TP 99' + stop, posted_at=original.posted_at)
+        s.add(edit); await s.flush()
+        ctx = RunContext(run_id='abcd9999', source_id=original.source_id,
+                         message_row_id=edit.id, signal_ref=edit.signal_ref, origin='agent')
+    await ex.trail_after_tp1()
+    await ex.trail_profit()
+    before = dict(broker.positions[runner])
+    assert before['tp'] == 0
+    result = await ex.update_uz_gold_signal(ctx)
+    assert result['ok'], result
+    assert broker.positions[runner]['tp'] == 0
+    assert broker.positions[runner]['sl'] == before['sl']
 
 
 @pytest.mark.parametrize('side', ['buy', 'sell'])
