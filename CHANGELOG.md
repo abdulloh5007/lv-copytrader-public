@@ -5,6 +5,13 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Private recovery snapshot
+
+- Preserve the active channel brief and the owner's configured Codex executable
+  and login material in the private recovery archive; omit transient caches.
+- Start the saved Codex service on restore when its CPU architecture matches,
+  and refuse an automatic start with an incompatible executable.
+
 ### Channel stop prices
 
 - Recognize explicit channel stop prices in gold entries and edits, apply them
