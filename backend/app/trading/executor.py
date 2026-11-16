@@ -54,7 +54,7 @@ from app.ai.tools import WATCHDOG_TOOL_NAMES, spec_by_name
 from app.config import Settings
 from app.db import get_setting, session_scope
 from app.errors import ConfigError, RpcError, SignalPilotError, TradingError, retcode_message
-from app.models import Message, Run, Source, Trade, TradeEvent, utcnow
+from app.models import GoldAddonClaim, Message, Run, Source, Trade, TradeEvent, utcnow
 from app.operator_settings import (
     MAX_ENTRY_DRIFT_USD_DEFAULT,
     MODE_AI_MANAGED,
@@ -85,6 +85,7 @@ from app.trading.constants import (
     ORDER_TYPE_SELL_LIMIT,
     PARTIAL_RETCODE,
     POSITION_TYPE_BUY,
+    POSITION_TYPE_SELL,
     POSITION_TYPE_NAMES,
     SUCCESS_RETCODES,
     TRADE_ACTION_DEAL,
@@ -495,6 +496,9 @@ class _Plan:
     suggested_runner_tp_index: int | None = None
     chosen_runner_tp_index: int | None = None
     channel_stop_pips: float | None = None
+    gold_auto_first_target: bool = False
+    gold_addon_stop_distance: float | None = None
+    gold_addon_auto_tp: bool = False
 
     def summary(self) -> dict[str, Any]:
         """Render the plan as the JSON the model reads, with every distance in three units."""
@@ -1912,6 +1916,186 @@ class Executor:
             session.expunge(row)
             return row, policy
 
+    async def _uz_gold_addon_context(self, ctx: RunContext, *, claimed: bool) -> tuple[Any, ...]:
+        """Resolve an independent add-on from its source signal, not position state."""
+        from app.ai.uz_gold_addon import addon_price
+        from app.ai.uz_gold_zone import entry_identity, parse_uz_gold_post
+        from app.trading.symbols import server_time_offset, _strip_suffix
+        from types import SimpleNamespace
+        row, policy = await self._uz_gold_context(ctx)
+        if policy.get("addon_enabled") is not True or row.catchup or row.edit_date or row.reply_to_message_id is None:
+            raise ConfigError("add-on is disabled or not a new linked post")
+        if row.posted_at is None:
+            raise ConfigError("add-on signal timestamp is unavailable")
+        stamp = row.posted_at.replace(tzinfo=timezone.utc) if row.posted_at.tzinfo is None else row.posted_at
+        age = time.time() - stamp.timestamp()
+        wait = policy.get("entry_wait_seconds", 0)
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 900:
+            raise ConfigError("invalid add-on waiting policy")
+        max_age = max(60.0, float(wait)) if ctx.waiting_for_zone else 60.0
+        if not 0 <= age <= max_age:
+            raise ConfigError("add-on signal is stale")
+        async with session_scope() as session:
+            later = (await session.execute(select(Message.id).where(
+                Message.source_id == row.source_id, Message.id > row.id,
+                Message.message_id != row.message_id, Message.kind == "text", Message.text != ""
+            ).limit(1))).scalar_one_or_none()
+            if later is not None:
+                raise ConfigError("new channel message superseded the add-on")
+            claim = (await session.execute(select(GoldAddonClaim).where(
+                GoldAddonClaim.source_id == row.source_id, GoldAddonClaim.message_id == row.message_id
+            ))).scalars().first()
+            if (claimed and (claim is None or claim.run_id != ctx.run_id)) or (not claimed and claim is not None):
+                raise ConfigError("add-on was already claimed")
+            parent_id = int(row.reply_to_message_id)
+            root_id = await guards.root_message_id(session, row.source_id, parent_id)
+            parent_ref = f"SIG:{row.source_id}:{root_id}"
+            refs = await guards.chain_signal_refs(session, parent_ref)
+            original = None
+            for message_id in dict.fromkeys((parent_id, root_id)):
+                candidate = (await session.execute(select(Message).where(
+                    Message.source_id == row.source_id, Message.message_id == message_id
+                ).order_by(Message.revision.desc(), Message.id.desc()).limit(1))).scalars().first()
+                if candidate is not None and candidate.deleted_at is None and entry_identity(str(candidate.text or "")):
+                    original = candidate
+                    break
+            if original is None:
+                raise ConfigError("add-on direction cannot be verified from its source signal")
+            source_text = str(original.text or "")
+            identity = entry_identity(source_text)
+            assert identity is not None
+            candidates = (await session.execute(select(Trade).where(
+                Trade.signal_ref.in_(refs), Trade.source_id == row.source_id,
+                Trade.status.in_(("open", "closed")), Trade.kind == "position", Trade.external.is_(False),
+                Trade.split_count == 2, Trade.split_index.in_((0, 1)),
+                Trade.magic == int(self.settings.MAGIC_NUMBER)
+            ).order_by(Trade.split_index, Trade.id))).scalars().all()
+            compatible = [t for t in candidates if str(t.side).lower() == identity[0]
+                          and _strip_suffix(str(t.symbol).upper()) == "XAUUSD"]
+            by_index: dict[int, list[Trade]] = {0: [], 1: []}
+            for item in compatible:
+                by_index[int(item.split_index)].append(item)
+            if any(len(items) > 1 for items in by_index.values()):
+                raise ConfigError("source signal has ambiguous saved targets")
+            symbol = str(compatible[0].symbol) if compatible else None
+            source_entry = float(compatible[0].entry_price) if compatible else None
+        side = identity[0]
+        if symbol:
+            ref = await self.resolver.get(symbol)
+        else:
+            available = await self.resolver.candidates("XAUUSD")
+            ref = next((r for r in available if _strip_suffix(str(r.name).upper()) == "XAUUSD" and r.tradable), None)
+            if ref is None:
+                raise ConfigError("no verified tradable gold symbol")
+        quote = await self.resolver.quote(ref.name)
+        offset = await server_time_offset(self.rpc, self.resolver)
+        now = time.time()
+        tick_age = now - (float(quote.time_ts) - offset)
+        bid, ask = float(quote.bid), float(quote.ask)
+        tolerance = policy.get("zone_tolerance", 0)
+        if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float))
+                or not math.isfinite(tolerance) or not 0 <= tolerance <= 2):
+            raise ConfigError("invalid add-on price tolerance")
+        if not all(math.isfinite(x) for x in (bid, ask, tick_age)) or bid <= 0 or ask < bid or not 0 <= tick_age <= 5:
+            raise ConfigError("add-on quote is stale or invalid")
+        entry = ask if side == "buy" else bid
+        target = addon_price(str(row.text or ""), reference=(bid + ask) / 2)
+        if target is None:
+            raise ConfigError("add-on price is ambiguous")
+        if abs(entry - target) > float(tolerance):
+            raise ConfigError("quote_outside_addon_zone")
+        # Only a target printed in the original channel signal is inherited.
+        # A broker TP may instead be our calculated 1R, a later manual change,
+        # or the runner target; none of those is the channel's first target.
+        # Use the original fill to resolve abbreviated levels where available.
+        # Without it, a zone far from today's quote may be in another century;
+        # do not guess a channel TP from such a source.
+        reference = source_entry if source_entry and math.isfinite(source_entry) and source_entry > 0 else (bid + ask) / 2
+        source = parse_uz_gold_post(source_text, quote=reference, fallback_levels=True)
+        zone_unverified = (source_entry is None and (source.zone is None or
+                           (min(abs(reference - source.zone[0]), abs(reference - source.zone[1])) > 30
+                            and not source.zone[0] <= reference <= source.zone[1])))
+        channel_tp = (source.targets[0] if source.kind == "entry" and source.side == side
+                      and source.targets and not zone_unverified else 0.0)
+        tp = (channel_tp if math.isfinite(channel_tp) and channel_tp > 0
+              and (channel_tp > entry if side == "buy" else channel_tp < entry) else 0.0)
+        return row, policy, SimpleNamespace(side=side), SimpleNamespace(tp=tp), ref, quote
+
+    async def _uz_gold_addon_guard(self, ctx: RunContext, plan: _Plan) -> str | None:
+        try:
+            _row, _policy, trade, position, ref, quote = await self._uz_gold_addon_context(ctx, claimed=True)
+            entry = float(quote.ask if plan.side == "buy" else quote.bid)
+            first_tp = float(position.tp or 0)
+            expected_tp = (pricing.one_r_take_profit(ref, plan.side, plan.entry, plan.sl)
+                           if plan.gold_addon_auto_tp else first_tp)
+            if (len(plan.legs) != 1 or plan.legs[0].volume != 0.1 or plan.side != str(trade.side).lower()
+                    or ref.name != plan.ref.name or abs(entry - plan.entry) > 0.5
+                    or plan.gold_addon_stop_distance != 15.0
+                    or abs(plan.sl - (plan.entry - 15.0 if plan.side == "buy" else plan.entry + 15.0)) > 0.5
+                    or (plan.gold_addon_auto_tp and first_tp > 0)
+                    or (not plan.gold_addon_auto_tp and first_tp <= 0)
+                    or abs(expected_tp - plan.legs[0].tp) > ref.point):
+                return "add-on position, protection or quote changed before order"
+            async with session_scope() as session:
+                return await guards.check_armed(session)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - fail closed without guessing broker state
+            log.warning("uz_gold_addon_guard_failed error=%s", type(exc).__name__)
+            return "add-on could not be verified before order"
+
+    @_serialize_broker_write
+    async def open_uz_gold_addon(self, ctx: RunContext) -> dict[str, Any]:
+        """Open an independent add-on with its own stop and the channel's first TP."""
+        try:
+            row, policy, trade, position, ref, quote = await self._uz_gold_addon_context(ctx, claimed=False)
+            mode, detected, _ = self._margin_mode(await self._account_info())
+            if mode != "hedging" or detected != "hedging":
+                return _refuse("add-on requires a verified hedging account", stage="channel_profile")
+            distance = float(policy["stop_distance"])
+            entry = float(quote.ask if trade.side == "buy" else quote.bid)
+            own_stop = entry - distance if trade.side == "buy" else entry + distance
+            first_tp = float(position.tp or 0)
+            own_tp = first_tp if first_tp > 0 else pricing.one_r_take_profit(ref, trade.side, entry, own_stop)
+            plan, refusal = await self._prepare(ctx, symbol=ref.name, side=trade.side,
+                sl=own_stop, tp=[own_tp], volume=0.1, risk_percent=None,
+                pending=False)
+            if refusal is not None:
+                return refusal
+            assert plan is not None
+            expected = plan.entry - distance if plan.side == "buy" else plan.entry + distance
+            if len(plan.legs) != 1 or plan.legs[0].volume != 0.1 or abs(plan.sl - expected) > 0.5:
+                return _refuse("add-on volume or protection does not match", stage="channel_profile")
+            plan.gold_addon_stop_distance = distance
+            plan.gold_addon_auto_tp = first_tp <= 0
+            refusal = await self._gate(ctx, plan)
+            if refusal is not None:
+                return refusal
+            refusal = await self._check_margin(plan)
+            if refusal is not None:
+                return refusal
+            # The durable claim commits before any broker call. A crash, edit or replay
+            # may miss an add-on, but can never make this post send another one.
+            async with session_scope() as session:
+                session.add(GoldAddonClaim(source_id=row.source_id, message_id=row.message_id, run_id=ctx.run_id))
+                await session.flush()
+            try:
+                return await self._execute_plan(ctx, plan, reason="gold channel add-on")
+            except asyncio.CancelledError:
+                await asyncio.shield(self.runtime.set_armed(False))
+                raise
+            except Exception as exc:  # noqa: BLE001 - a broker call may have completed
+                log.warning("uz_gold_addon_outcome_uncertain error=%s", type(exc).__name__)
+                return {"ok": False, "safety_failures": ["add-on outcome is unknown"],
+                        "message": "Add-on outcome is unknown; check the broker."}
+        except ConfigError as exc:
+            return _refuse("gold channel add-on refused: " + exc.message, stage="channel_profile")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - never retry uncertain broker work
+            log.warning("uz_gold_addon_failed error=%s", type(exc).__name__)
+            return _refuse("gold channel add-on could not be verified", stage="channel_profile")
+
     async def _uz_gold_entry_guard(self, ctx: RunContext, plan: _Plan) -> str | None:
         """Revalidate source, quote, exact direction and the arm gate before each leg."""
         from app.ai.uz_gold_plan import plan_gold_entry
@@ -1943,7 +2127,8 @@ class Executor:
             if candidate.side != plan.side or len(plan.legs) != 2 or tuple(leg.volume for leg in plan.legs) != candidate.lots:
                 return "gold channel side or split no longer matches the verified signal"
             if candidate.targets:
-                if tuple(leg.tp for leg in plan.legs) != candidate.targets:
+                expected_targets = candidate.targets if len(candidate.targets) == 2 else (candidate.targets[0], 0.0)
+                if tuple(leg.tp for leg in plan.legs) != expected_targets:
                     return "gold channel targets no longer match the verified signal"
             elif (len(plan.legs) != 2 or plan.legs[1].tp != 0.0 or
                   abs(plan.legs[0].tp - pricing.one_r_take_profit(
@@ -2011,13 +2196,18 @@ class Executor:
                 if abs(float(ref.pip_size) - 0.1) > 1e-9:
                     return _refuse("gold pip convention does not match the configured 0.10 price units", stage="channel_profile")
                 plan.channel_stop_pips = proposal.channel_stop_pips
-            if not proposal.targets:
-                cover_tp = pricing.one_r_take_profit(plan.ref, plan.side, plan.entry, plan.sl)
+            if len(proposal.targets) < 2:
+                plan.gold_auto_first_target = not proposal.targets
+                cover_tp = (proposal.targets[0] if proposal.targets else
+                            pricing.one_r_take_profit(plan.ref, plan.side, plan.entry, plan.sl))
                 plan.legs = [_Leg(index=0, volume=proposal.lots[0], tp=cover_tp),
                              _Leg(index=1, volume=proposal.lots[1], tp=0.0)]
                 plan.runner_mode = MODE_BE_AFTER_TP1
                 plan.tps = [cover_tp]
-                plan.notes.append("No channel targets: first position targets 1R; runner has no TP.")
+                if not proposal.targets:
+                    plan.notes.append("No usable channel targets: first position targets 1R; runner has no TP.")
+            if proposal.ignored_levels:
+                plan.notes.append("Unusable channel levels ignored: " + ", ".join(proposal.ignored_levels))
             failure = await self._uz_gold_entry_guard(work, plan)
             if failure:
                 if failure == "gold channel targets no longer match the verified signal":
@@ -2097,7 +2287,7 @@ class Executor:
                                   and not old.deleted_at and not latest.deleted_at and old_id and new_id
                                   and old_id[0] == new_id[0]
                                   and (old_id[1] is None or new_id[1] is None or old_id[1:] == new_id[1:])
-                                  and target_count(old.text) == target_count(latest.text) == 2)
+                                  and target_count(old.text) >= 1 and target_count(latest.text) >= 1)
                     latest_id = int(latest.id) if compatible else None
                 if latest_id is None:
                     return _refuse("superseded channel update with possible exposure; check positions",
@@ -2111,9 +2301,12 @@ class Executor:
             if not is_be and not row.edit_date and row.reply_to_message_id is None:
                 return _refuse("target update is not an edit or a reply", stage="channel_profile")
             async with session_scope() as session:
-                trades = await guards.live_chain_trades(session, row.signal_ref)
-                trades = [t for t in trades if not t.external and t.kind == "position"
-                          and t.source_id == row.source_id and int(t.magic) == int(self.settings.MAGIC_NUMBER)]
+                family_trades = await guards.live_chain_trades(session, row.signal_ref)
+                family_trades = [t for t in family_trades if not t.external and t.kind == "position"
+                                 and t.source_id == row.source_id and int(t.magic) == int(self.settings.MAGIC_NUMBER)]
+                trades = [t for t in family_trades if t.split_count == 2]
+                if len(trades) != len(family_trades):
+                    return _refuse("signal positions are ambiguous", stage="channel_profile")
                 if not trades:
                     return _refuse("no live positions match this signal", stage="channel_profile")
                 refs = {t.signal_ref for t in trades}
@@ -2123,18 +2316,24 @@ class Executor:
                 if original is None:
                     return _refuse("original signal is unavailable", stage="channel_profile")
                 reference = float(trades[0].entry_price)
-                before = parse_uz_gold_post(str(original.text or ""), quote=reference)
-                after = parse_uz_gold_post(str(row.text or ""), quote=reference)
+                before = parse_uz_gold_post(str(original.text or ""), quote=reference, fallback_levels=True)
+                after = parse_uz_gold_post(str(row.text or ""), quote=reference, fallback_levels=True)
+                if len(after.targets) > 2:
+                    after = replace(after, targets=after.targets[:2])
                 if row.reply_to_message_id is not None and before.kind == "entry":
                     stop_reply = stop_only_post(str(row.text or ""))
                     if stop_reply is not None:
                         after = replace(before, targets=(), sl=stop_reply[0], sl_pips=stop_reply[1])
-                family = await guards.family_message_ids(session, original.source_id, original.message_id)
+                family_refs = await guards.chain_signal_refs(session, original.signal_ref)
+                family = {parsed[1] for ref in family_refs if (parsed := guards.parse_signal_ref(ref)) is not None}
                 earlier = (await session.execute(select(Message.text).where(
                     Message.source_id == original.source_id, Message.message_id.in_(family),
                     Message.id < row.id,
                 ))).scalars().all()
-                prior_channel_targets = any(target_count(text or "") for text in earlier)
+                prior_channel_targets = any(
+                    parse_uz_gold_post(str(text or ""), quote=reference, fallback_levels=True).targets
+                    for text in earlier
+                )
                 trailing = await profit_trailing_config(session)
                 enrolled = False
                 try:
@@ -2161,7 +2360,7 @@ class Executor:
             if not is_be:
                 if (after.kind != "entry" or after.side != before.side
                         or (before.zone is not None and after.zone != before.zone)
-                        or len(after.targets) not in (0, 2)
+                        or len(after.targets) not in (0, 1, 2)
                         or (not after.targets and after.sl is None and after.sl_pips is None)):
                     return _refuse("updated targets conflict with the original signal", stage="channel_profile")
             work = replace(ctx, signal_ref=trades[0].signal_ref, origin="uz_gold_management", bypass_arm=True)
@@ -2228,7 +2427,7 @@ class Executor:
                             if abs(float(position.tp or 0) - old_1r) <= max(ref.point, 1e-8):
                                 new_1r = pricing.one_r_take_profit(ref, side, entry, stop)
                                 retarget = await self.modify_position(work, ticket=int(position.ticket), tp=new_1r,
-                                    reason="adjust automatic 1R to channel stop", notify=False)
+                                    reason="adjust first target after channel stop", notify=False)
                                 if not retarget.get("ok"):
                                     failures.append(str(retarget.get("message") or "broker refused 1R target update"))
                                     continue
@@ -2236,6 +2435,9 @@ class Executor:
                             changed.append(int(position.ticket))
                         else:
                             unchanged.append(int(position.ticket))
+                        continue
+                    if index >= len(after.targets):
+                        (changed if stop_changed else unchanged).append(int(position.ticket))
                         continue
                     # Once TP1 has closed, an enrolled trailing runner must not
                     # have TP2 restored by a late channel edit.
@@ -2262,11 +2464,14 @@ class Executor:
                                action=action, updated=changed, unchanged=unchanged)
             message = ("Break-even applied to matching positions." if is_be else
                        "Channel levels applied to the existing positions.")
+            if not is_be and after.ignored_levels:
+                message += " Unusable channel levels ignored: " + ", ".join(after.ignored_levels) + "."
             if changed:
                 detail = ("Break-even" if is_be else
                           ", ".join(([f"SL {after.sl}"] if after.sl is not None else
                                      [f"SL {after.sl_pips} pips from each entry"] if after.sl_pips is not None else []) +
-                                    ([f"TP1 {after.targets[0]}, TP2 {after.targets[1]}"] if after.targets else [])))
+                                    [f"TP{idx + 1} {target}" for idx, target in enumerate(after.targets)] +
+                                    (["Ignored: " + ", ".join(after.ignored_levels)] if after.ignored_levels else [])))
                 rendered = self._render("render_modified", symbol=str(trades[0].symbol),
                                         side=before.side, tickets=changed, breakeven=is_be,
                                         detail=detail, signal_ref=trades[0].signal_ref)
@@ -3037,7 +3242,9 @@ class Executor:
             if refusal:
                 return _refuse(refusal, stage="operator_limit", plan=plan.summary())
 
-            refusal = await guards.check_duplicate_signal(session, ctx.signal_ref)
+            # Add-ons have their own persisted per-post claim and must coexist
+            # with the explicitly verified original position in the same chain.
+            refusal = None if ctx.origin == "uz_gold_addon" else await guards.check_duplicate_signal(session, ctx.signal_ref)
             if refusal:
                 return _refuse(
                     refusal,
@@ -3166,7 +3373,7 @@ class Executor:
                 log.warning("send_order_symbol_ref_failed symbol=%s error=%s", symbol, exc)
 
         # Do not reprice this channel's verified signal behind its zone and SL checks.
-        retries = 0 if ctx.origin == "uz_gold" else max(0, int(self.settings.REQUOTE_RETRIES))
+        retries = 0 if ctx.origin in {"uz_gold", "uz_gold_addon"} else max(0, int(self.settings.REQUOTE_RETRIES))
         movements: list[dict[str, Any]] = []
         attempts = 0
         result: Any = None
@@ -3565,17 +3772,18 @@ class Executor:
                     },
                     retcode=None if check is None else int(check.retcode),
                 )
-                if ctx.origin == "uz_gold":
+                if ctx.origin in {"uz_gold", "uz_gold_addon"}:
                     for remaining in plan.legs[leg_index + 1:]:
                         remaining.refusal = "earlier leg failed; no further order was sent"
                     break
                 continue
 
-            entry_error = (await self._uz_gold_entry_guard(ctx, plan) if ctx.origin == "uz_gold"
-                           else await self._xauuad_entry_guard(ctx, plan.side))
+            entry_error = (await self._uz_gold_entry_guard(ctx, plan) if ctx.origin == "uz_gold" else
+                           await self._uz_gold_addon_guard(ctx, plan) if ctx.origin == "uz_gold_addon" else
+                           await self._xauuad_entry_guard(ctx, plan.side))
             if entry_error:
                 leg.refusal = entry_error
-                if ctx.origin == "uz_gold":
+                if ctx.origin in {"uz_gold", "uz_gold_addon"}:
                     for remaining in plan.legs[leg_index + 1:]:
                         remaining.refusal = "earlier leg failed verification; no further order was sent"
                     break
@@ -3583,12 +3791,12 @@ class Executor:
             try:
                 leg.result = await self.send_order(request, ctx=ctx, expect_pending=plan.pending)
             except asyncio.CancelledError:
-                if ctx.origin == "uz_gold":
+                if ctx.origin in {"uz_gold", "uz_gold_addon"}:
                     await asyncio.shield(self.runtime.set_armed(False))
                     self._notify("attention", "Order outcome is unknown after cancellation; trading disabled. Check positions.")
                 raise
             except Exception as exc:
-                if ctx.origin != "uz_gold":
+                if ctx.origin not in {"uz_gold", "uz_gold_addon"}:
                     raise
                 leg.refusal = "broker response was lost; order outcome is unknown"
                 safety_failures.append(leg.refusal)
@@ -3596,9 +3804,9 @@ class Executor:
                 for remaining in plan.legs[leg_index + 1:]:
                     remaining.refusal = "earlier order outcome is unknown; no further order was sent"
                 break
-            if ctx.origin == "uz_gold" and leg.result.retcode is None:
+            if ctx.origin in {"uz_gold", "uz_gold_addon"} and leg.result.retcode is None:
                 safety_failures.append("broker returned no result; order outcome is unknown")
-            if ctx.origin == "uz_gold" and leg.result.ok:
+            if ctx.origin in {"uz_gold", "uz_gold_addon"} and leg.result.ok:
                 position, missing = await self._find_position(leg.result.ticket)
                 if missing is not None or position is None:
                     safety_failures.append("filled position could not be verified at the broker")
@@ -3612,9 +3820,12 @@ class Executor:
                             or (side == "buy" and broker_sl >= actual)
                             or (side == "sell" and broker_sl <= actual)
                             or abs(actual - float(plan.entry)) > 0.5
-                            or abs(broker_sl - float(plan.sl)) > max(ref.point, 1e-8)):
+                            or abs(broker_sl - float(plan.sl)) > max(ref.point, 1e-8)
+                            or (ctx.origin == "uz_gold_addon" and
+                                (abs(float(position.tp or 0) - float(leg.tp)) > max(ref.point, 1e-8)
+                                 or abs(float(position.volume) - float(leg.volume)) > 1e-8))):
                         safety_failures.append("broker position or its requested stop could not be verified")
-            if ctx.origin == "uz_gold" and (not leg.result.ok or leg.result.partial or safety_failures):
+            if ctx.origin in {"uz_gold", "uz_gold_addon"} and (not leg.result.ok or leg.result.partial or safety_failures):
                 for remaining in plan.legs[leg_index + 1:]:
                     remaining.refusal = "earlier leg was rejected, incomplete or uncertain; no further order was sent"
                 break
@@ -3640,7 +3851,7 @@ class Executor:
                 reason,
                 unmanaged_for_row,
             )
-            if ctx.origin == "uz_gold" and trade_id is None:
+            if ctx.origin in {"uz_gold", "uz_gold_addon"} and trade_id is None:
                 safety_failures.append("filled position could not be recorded for later management")
 
         # Initial pip stops are placed with the order against the quote, then
@@ -3680,9 +3891,49 @@ class Executor:
                                                      tp=float(checked.tp or 0))
                         safety_failures.append("channel pip stop could not be verified after adjustment")
 
+        if ctx.origin == "uz_gold_addon" and plan.gold_addon_stop_distance is not None:
+            work = replace(ctx, origin="uz_gold_management", bypass_arm=True)
+            for leg in opened:
+                position, missing = await self._find_position(leg.result.ticket if leg.result else None)
+                if missing is not None or position is None:
+                    safety_failures.append("add-on stop could not be verified after fill")
+                    continue
+                actual = float(position.price_open or 0)
+                distance = float(plan.gold_addon_stop_distance)
+                desired = actual - distance if plan.side == "buy" else actual + distance
+                desired = pricing.round_stop_away(ref, desired, plan.side, "sl")
+                if actual <= 0 or desired <= 0:
+                    safety_failures.append("add-on actual fill or stop is invalid")
+                    continue
+                desired_tp = (pricing.one_r_take_profit(ref, plan.side, actual, desired)
+                              if plan.gold_addon_auto_tp else float(position.tp or 0))
+                adjust_sl = abs(float(position.sl or 0) - desired) > max(ref.point / 2, 1e-8)
+                adjust_tp = plan.gold_addon_auto_tp and abs(float(position.tp or 0) - desired_tp) > max(ref.point / 2, 1e-8)
+                if adjust_sl or adjust_tp:
+                    adjusted = await self.modify_position(work, ticket=int(position.ticket),
+                                                         sl=desired if adjust_sl else None,
+                                                         tp=desired_tp if adjust_tp else None,
+                                                         reason="add-on protection from actual fill", notify=False)
+                    if not adjusted.get("ok"):
+                        safety_failures.append("add-on protection could not be adjusted to actual fill")
+                        continue
+                    checked, missing = await self._find_position(int(position.ticket))
+                    if (missing is not None or checked is None
+                            or abs(float(checked.sl or 0) - desired) > max(ref.point, 1e-8)
+                            or (plan.gold_addon_auto_tp and abs(float(checked.tp or 0) - desired_tp) > max(ref.point, 1e-8))):
+                        if checked is not None:
+                            await self._update_trade(int(position.ticket), sl=float(checked.sl or 0),
+                                                     tp=float(checked.tp or 0))
+                        safety_failures.append("add-on protection could not be verified after adjustment")
+                        continue
+                plan.sl = desired
+                if plan.gold_addon_auto_tp:
+                    leg.tp = desired_tp
+                    plan.tps = [desired_tp]
+
         if opened and not plan.pending and plan.kind == "ladder" and float(plan.sl or 0.0) > 0.0:
             await self._retarget_ladder_cover_from_fills(ctx, plan)
-        if ctx.origin == "uz_gold" and not safety_failures and len(plan.legs) == 2 and plan.legs[1].tp == 0 and opened:
+        if ctx.origin == "uz_gold" and plan.gold_auto_first_target and not safety_failures and len(plan.legs) == 2 and plan.legs[1].tp == 0 and opened:
             leg = plan.legs[0]
             if leg.ok and leg.result and leg.result.ticket:
                 position, missing = await self._find_position(leg.result.ticket)

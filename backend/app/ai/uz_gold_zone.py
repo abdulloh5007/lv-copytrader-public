@@ -23,6 +23,11 @@ _REENTRY_ANNOUNCEMENT = re.compile(
 _OTHER_SYMBOL = re.compile(r'\b(?:BTC|BTCUSD|ETH|ETHUSD|XAG|XAGUSD|EURUSD|GBPUSD)\b', re.I)
 _LEVEL = (r'(?:TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?|'
           r'SL\s*[:=]?\s*(?:\d+(?:\.\d+)?\s*PIPS?|\d{3,6}(?:\.\d+)?))')
+_EXPLICIT_REENTRY = re.compile(
+    r"^\s*(?P<zone>\d{1,5}\s*[-–—]\s*\d{1,5})\s*"
+    r"(?P<side>BUY|SELL|SEL)\s+RE\s*-?\s*ENTRY"
+    r"(?P<levels>(?:\s+" + _LEVEL + r"){0,4})\s*[.!‼️✅]*\s*$", re.I
+)
 _MARKET_NOW = re.compile(
     r'^\s*(?:(?:GOLD|XAUUSD)\s+)?(BUY|SELL|SEL)\s+NOW'
     r'(?P<levels>(?:\s+' + _LEVEL + r'){0,3})\s*[.!‼️]*\s*$', re.I
@@ -46,6 +51,8 @@ class GoldZonePost:
     sl_pips: float | None = None
     action: str = ''
     reason: str = ''
+    ignored_levels: tuple[str, ...] = ()
+    verified_first_target: float | None = None
 
 
 def _expand_first(raw: str, quote: float) -> int:
@@ -120,6 +127,11 @@ def stop_only_post(text: str) -> tuple[float | None, float | None] | None:
 def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
     """Extract direction and printed zone for edit-conflict checks without guessing prices."""
     text = text or ""
+    reentry = _EXPLICIT_REENTRY.fullmatch(text)
+    if reentry:
+        zone = _RANGE.search(reentry.group("zone"))
+        assert zone is not None
+        return ("buy" if reentry.group("side").lower() == "buy" else "sell", zone.group(1), zone.group(2))
     if re.search(r'\bb\s*/\s*u\b|bezubit|bezub|\byop|\bre\s*-?\s*entry\b|\brentery\b', text, re.I):
         return None
     market = _MARKET_NOW.fullmatch(text)
@@ -138,7 +150,7 @@ def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
     return side, zones[0].group(1), zones[0].group(2)
 
 
-def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
+def parse_uz_gold_post(text: str, *, quote: float | None, fallback_levels: bool = False) -> GoldZonePost:
     """Interpret a channel post without authorizing a trade or guessing absent SL."""
     text = text or ''
     lower = text.lower()
@@ -149,6 +161,10 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
         return GoldZonePost('management', action='break_even_request')
     if re.search(r'\byop(?:ing|ish|dik|ildi|amiz|inglar)?\b|\byoping\b', lower):
         return GoldZonePost('management', action='close_request')
+    reentry = _EXPLICIT_REENTRY.fullmatch(text)
+    if reentry:
+        normalized = f"{reentry.group('zone')} {reentry.group('side')} zone{reentry.group('levels')}"
+        return parse_uz_gold_post(normalized, quote=quote, fallback_levels=fallback_levels)
     if re.search(r'\bre\s*-?\s*entry\b|\brentery\b', lower):
         return GoldZonePost('management', action='reentry_request')
     personal = _UZ_PERSONAL_ENTRY.fullmatch(text)
@@ -158,29 +174,42 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
         # Reuse the same price, target and contradiction checks as explicit
         # buy/sell zone posts; no prices are inferred without a fresh quote.
         normalized = f"{zone} {'buy' if side.lower().startswith('buy') else 'sell'}{personal.group('levels')}"
-        return parse_uz_gold_post(normalized, quote=quote)
+        return parse_uz_gold_post(normalized, quote=quote, fallback_levels=fallback_levels)
     market = _MARKET_NOW.fullmatch(text)
     if market:
         side = 'buy' if market.group(1).lower() == 'buy' else 'sell'
         raw_targets = _TARGET.findall(market.group('levels'))
+        ignored_levels: list[str] = []
         try:
             stop, pips = channel_stop(market.group('levels'))
         except ValueError as exc:
-            return GoldZonePost('invalid', side=side, reason=str(exc))
+            if not fallback_levels:
+                return GoldZonePost('invalid', side=side, reason=str(exc))
+            stop, pips = None, None
+            ignored_levels.append('invalid_stop')
         if not raw_targets and stop is None:
             return GoldZonePost('entry', side=side, sl_pips=pips, action='market_now')
         if isinstance(quote, bool) or not isinstance(quote, (int, float)) or not math.isfinite(quote) or not 100 <= quote <= 10000:
             return GoldZonePost('invalid', side=side, reason='missing_or_invalid_gold_quote')
         if stop is not None and not (stop < quote if side == 'buy' else stop > quote):
-            return GoldZonePost('invalid', side=side, reason='contradictory_stop')
+            if not fallback_levels:
+                return GoldZonePost('invalid', side=side, reason='contradictory_stop')
+            stop = None
+            ignored_levels.append('invalid_stop')
         reference = (float(quote), float(quote))
         targets: list[float] = []
+        verified_first_target = None
         for raw in raw_targets:
             target = _target(raw, reference, side, targets[-1] if targets else None)
             if target is None:
-                return GoldZonePost('invalid', side=side, reason='ambiguous_or_contradictory_target')
+                if not fallback_levels:
+                    return GoldZonePost('invalid', side=side, reason='ambiguous_or_contradictory_target')
+                verified_first_target = targets[0] if targets else None
+                targets.clear()
+                ignored_levels.append('invalid_targets')
+                break
             targets.append(target)
-        return GoldZonePost('entry', side=side, targets=tuple(targets), sl=stop, sl_pips=pips, action='market_now')
+        return GoldZonePost('entry', side=side, targets=tuple(targets), sl=stop, sl_pips=pips, action='market_now', ignored_levels=tuple(ignored_levels), verified_first_target=verified_first_target)
     sides = list(_SIDE.finditer(text))
     zones = list(_RANGE.finditer(text))
     if not sides or not zones:
@@ -198,17 +227,34 @@ def parse_uz_gold_post(text: str, *, quote: float | None) -> GoldZonePost:
     if min(abs(quote-zone[0]), abs(quote-zone[1])) > 100 and not zone[0] <= quote <= zone[1]:
         return GoldZonePost('invalid', side=side, zone=zone, reason='entry_too_far_from_quote')
     targets: list[float] = []
+    ignored_levels: list[str] = []
+    verified_first_target = None
     for match in _TARGET.finditer(text):
         target = _target(match.group(1), zone, side, targets[-1] if targets else None)
         if target is None:
-            return GoldZonePost('invalid', side=side, zone=zone, reason='ambiguous_or_contradictory_target')
+            if not fallback_levels:
+                return GoldZonePost('invalid', side=side, zone=zone, reason='ambiguous_or_contradictory_target')
+            verified_first_target = targets[0] if targets else None
+            targets.clear()
+            ignored_levels.append('invalid_targets')
+            break
         targets.append(target)
     if len(targets) > 4:
-        return GoldZonePost('invalid', side=side, zone=zone, reason='excess_targets')
+        if not fallback_levels:
+            return GoldZonePost('invalid', side=side, zone=zone, reason='excess_targets')
+        verified_first_target = targets[0] if targets else None
+        targets.clear()
+        ignored_levels.append('invalid_targets')
     try:
         stop, pips = channel_stop(text)
     except ValueError as exc:
-        return GoldZonePost('invalid', side=side, zone=zone, reason=str(exc))
+        if not fallback_levels:
+            return GoldZonePost('invalid', side=side, zone=zone, reason=str(exc))
+        stop, pips = None, None
+        ignored_levels.append('invalid_stop')
     if stop is not None and not (stop < zone[0] if side == 'buy' else stop > zone[1]):
-        return GoldZonePost('invalid', side=side, zone=zone, reason='contradictory_stop')
-    return GoldZonePost('entry', side=side, zone=zone, targets=tuple(targets), sl=stop, sl_pips=pips)
+        if not fallback_levels:
+            return GoldZonePost('invalid', side=side, zone=zone, reason='contradictory_stop')
+        stop = None
+        ignored_levels.append('invalid_stop')
+    return GoldZonePost('entry', side=side, zone=zone, targets=tuple(targets), sl=stop, sl_pips=pips, ignored_levels=tuple(ignored_levels), verified_first_target=verified_first_target)

@@ -39,7 +39,7 @@ from app import events
 from app.config import settings
 from app.db import get_setting, session_scope
 from app.errors import SignalPilotError
-from app.models import Message, StoplessEpisode, Trade, utcnow
+from app.models import GoldAddonClaim, Message, StoplessEpisode, Trade, utcnow
 from app.operator_settings import profit_trailing_config
 from app.trading.constants import POSITION_TYPE_NAMES
 from app.trading.pricing import validate_stops
@@ -381,6 +381,36 @@ async def chain_signal_refs(session: AsyncSession, signal_ref: str | None) -> li
     source_id, message_id = parsed
     root = await root_message_id(session, source_id, message_id)
     ids = await family_message_ids(session, source_id, root)
+    # A confirmed add-on is a separate signal even though Telegram represents
+    # it as a reply. Exclude its entire reply subtree from the parent signal,
+    # and scope commands under an add-on to that subtree only.
+    from app.ai.uz_gold_addon import is_addon_post
+    addon_ids = set((await session.execute(select(GoldAddonClaim.message_id).where(
+        GoldAddonClaim.source_id == source_id, GoldAddonClaim.message_id.in_(ids)
+    ))).scalars().all())
+    posts = (await session.execute(select(Message.message_id, Message.text).where(
+        Message.source_id == source_id, Message.message_id.in_(ids)
+    ))).all()
+    addon_ids.update(int(mid) for mid, text in posts if is_addon_post(str(text or "")))
+    addon_root = None
+    current = message_id
+    seen: set[int] = set()
+    for _ in range(_CHAIN_WALK_LIMIT):
+        if current in seen:
+            break
+        seen.add(current)
+        if current in addon_ids:
+            addon_root = current
+            break
+        parent = await _reply_parent_id(session, source_id, current)
+        if parent is None or parent == current:
+            break
+        current = parent
+    if addon_root is not None:
+        ids = await family_message_ids(session, source_id, addon_root)
+    for other in addon_ids:
+        if other != addon_root and other in ids:
+            ids -= await family_message_ids(session, source_id, int(other))
     refs = {f"SIG:{source_id}:{mid}" for mid in ids}
     refs.add(ref)
     return sorted(refs)
@@ -396,8 +426,20 @@ async def chain_run_key(message_row_id: int) -> str | None:
         row = await session.get(Message, int(message_row_id))
         if row is None:
             return None
-        root = await root_message_id(session, int(row.source_id), int(row.message_id))
-        return f"{int(row.source_id)}:{root}"
+        source_id = int(row.source_id)
+        scoped = await chain_signal_refs(session, f"SIG:{source_id}:{int(row.message_id)}")
+        scoped_ids = {parsed[1] for ref in scoped if (parsed := parse_signal_ref(ref)) is not None}
+        root = int(row.message_id)
+        seen: set[int] = set()
+        for _ in range(_CHAIN_WALK_LIMIT):
+            if root in seen:
+                break
+            seen.add(root)
+            parent = await _reply_parent_id(session, source_id, root)
+            if parent is None or parent == root or parent not in scoped_ids:
+                break
+            root = parent
+        return f"{source_id}:{root}"
 
 
 async def live_chain_trades(session: AsyncSession, signal_ref: str | None) -> list[Trade]:

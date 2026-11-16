@@ -28,6 +28,7 @@ request that may well be served after a restart.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -293,6 +294,57 @@ def _has_downloadable_image(message: Any) -> bool:
     return False
 
 
+class _TelegramTimingFilter(logging.Filter):
+    """Relay only safe transport and difference metadata, never raw update payloads."""
+
+    _TRANSPORT_TYPES = frozenset({'Updates', 'UpdatesCombined', 'UpdateShort',
+                                  'UpdateShortMessage', 'UpdateShortChatMessage', 'UpdatesTooLong'})
+
+    def __init__(self, active_channel: Callable[[], int | None]) -> None:
+        super().__init__()
+        self.active_channel = active_channel
+        self.last_transport_at: float | None = None
+        self.last_transport_log_at: float = 0.0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.INFO:
+            return True
+        # Telethon's own transport debug contains class names here, but other
+        # debug records can contain whole objects. Relay only exact templates.
+        try:
+            if (record.name == 'telethon.network.mtprotosender' and
+                    record.msg == 'Handling update %s' and len(record.args) == 1):
+                kind = record.args[0]
+                if isinstance(kind, str) and kind in self._TRANSPORT_TYPES:
+                    self.last_transport_at = time.monotonic()
+                    if self.last_transport_at - self.last_transport_log_at >= 1.0:
+                        self.last_transport_log_at = self.last_transport_at
+                        log.info('telegram_transport_update type=%s', kind)
+            elif (record.name == 'telethon.client.updates' and
+                  record.msg == 'Getting difference for channel %s updates' and len(record.args) == 1):
+                channel = self.active_channel()
+                if channel is not None and int(record.args[0]) == _short_chat_id(channel):
+                    log.info('telegram_channel_difference_started source=active')
+        except Exception:  # noqa: BLE001 - diagnostics must never affect update delivery
+            pass
+        return False
+
+
+def _timing_install(filter_: _TelegramTimingFilter) -> None:
+    for name in ('telethon.network.mtprotosender', 'telethon.client.updates'):
+        logger = logging.getLogger(name)
+        logger.addFilter(filter_)
+        logger.setLevel(logging.DEBUG)
+
+
+def _timing_remove(filter_: _TelegramTimingFilter) -> None:
+    for name in ('telethon.network.mtprotosender', 'telethon.client.updates'):
+        logger = logging.getLogger(name)
+        logger.removeFilter(filter_)
+        if not any(isinstance(item, _TelegramTimingFilter) for item in logger.filters):
+            logger.setLevel(logging.NOTSET)
+
+
 class TelegramService:
     """Owns the Telethon client: login, dialogs, source selection and update handlers."""
 
@@ -316,6 +368,7 @@ class TelegramService:
         self._handlers: list[tuple[Callable[[Any], Any], Any]] = []
         self._active_source_id: int | None = None
         self._active_chat_id: int | None = None
+        self._timing_filter = _TelegramTimingFilter(lambda: self._active_chat_id)
 
         # Album reassembly state (§3.4). See _queue_album_member for why it exists.
         self._album_pending: dict[int, list[Any]] = {}
@@ -437,6 +490,8 @@ class TelegramService:
 
     def _build_client(self, api_id: int, api_hash: str, session_string: str | None) -> None:
         """Construct the Telethon client. §3.6: StringSession, never ``client.start()``."""
+        _timing_remove(self._timing_filter)
+        _timing_install(self._timing_filter)
         self.client = TelegramClient(
             StringSession(session_string or None),
             int(api_id),
@@ -550,6 +605,7 @@ class TelegramService:
                 await self._disconnect_client()
             except Exception as exc:  # noqa: BLE001 - shutdown must not raise
                 log.warning("telegram_stop_failed error=%s", exc)
+            _timing_remove(self._timing_filter)
             self._set_status(False, None)
             log.info("telegram_stopped")
 
@@ -1144,6 +1200,17 @@ class TelegramService:
         message = getattr(event, "message", None)
         if message is None:
             return
+        # This is after Telethon has dispatched the update, not a network timestamp.
+        # The separate transport log provides a coarse correlation for all chats.
+        last_transport = self._timing_filter.last_transport_at
+        last_transport_ms = (round((time.monotonic() - last_transport) * 1000)
+                             if last_transport is not None else None)
+        original_update = getattr(event, 'original_update', None)
+        update_type = type(original_update).__name__ if original_update is not None else None
+        queue = getattr(self.client, '_updates_queue', None)
+        queue_depth = queue.qsize() if isinstance(queue, asyncio.Queue) else None
+        log.info('telegram_dispatch message_id=%s update_type=%s last_any_transport_ms=%s queue_depth=%s',
+                 getattr(message, 'id', None), update_type, last_transport_ms, queue_depth)
         self.queue_auto_reaction(message)
         if getattr(message, "grouped_id", None):
             # Album members are *also* delivered as individual NewMessage updates, so handing

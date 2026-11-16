@@ -788,3 +788,30 @@ async def test_telegram_edit_timing_records_arrival_without_message_content(capl
     timing = re.search(r'edit_age_ms=(\d+) ingest_ms=(\d+)', caplog.text)
     assert timing and 2000 <= int(timing.group(1)) < 5000
     assert 'private channel content' not in caplog.text
+
+
+def test_telegram_diagnostics_only_relay_safe_metadata(caplog):
+    import logging
+    from app.telegram.client import _TelegramTimingFilter
+
+    probe = _TelegramTimingFilter(lambda: -1000000000123)
+    transport = logging.LogRecord('telethon.network.mtprotosender', logging.DEBUG, '', 0,
+                                  'Handling update %s', ('Updates',), None)
+    unsafe = logging.LogRecord('telethon.network.mtprotosender', logging.DEBUG, '', 0,
+                               'Raw contents %s', ('private channel content',), None)
+    active = logging.LogRecord('telethon.client.updates', logging.DEBUG, '', 0,
+                               'Getting difference for channel %s updates', (123,), None)
+    other = logging.LogRecord('telethon.client.updates', logging.DEBUG, '', 0,
+                              'Getting difference for channel %s updates', (456,), None)
+    warning = logging.LogRecord('telethon.client.updates', logging.WARNING, '', 0,
+                                'warning', (), None)
+    with caplog.at_level(logging.INFO, logger='app.telegram.client'):
+        assert probe.filter(transport) is False
+        assert probe.filter(unsafe) is False
+        assert probe.filter(active) is False
+        assert probe.filter(other) is False
+        assert probe.filter(warning) is True
+    assert probe.last_transport_at is not None
+    assert 'telegram_transport_update type=Updates' in caplog.text
+    assert caplog.text.count('telegram_channel_difference_started') == 1
+    assert 'private channel content' not in caplog.text

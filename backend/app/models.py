@@ -52,6 +52,20 @@ class AutoReactionReceipt(Base):
     __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uq_auto_reaction_post"),)
 
 
+class GoldAddonClaim(Base):
+    """Durable one-shot claim made before a gold add-on reaches the broker."""
+
+    __tablename__ = "gold_addon_claims"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(nullable=False)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    run_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("source_id", "message_id", name="uq_gold_addon_post"),)
+
+
 class Source(Base):
     """A signal source (a Telegram chat); exactly one row is `is_active` at a time."""
 

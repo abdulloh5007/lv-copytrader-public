@@ -5,6 +5,48 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Telegram delivery diagnostics
+
+- Record bounded, content-free transport and active-channel difference timing
+  alongside handler and ingest timing to investigate delayed channel updates.
+
+### Explicit gold re-entry
+
+- Recognize an explicit zone, direction and re-entry as a new signal, while
+  keeping ambiguous re-entry and management messages out of automatic entry.
+
+### Owner AI connectivity
+
+- Document that the owner Codex service must be rebound to the current app
+  network after app recreation and verified with an authenticated inference.
+
+### Linked gold add-ons
+
+- Take the add-on’s first target from the linked original channel signal, even if
+  its orders never opened; otherwise use the add-on’s own 1R target.
+
+- Recognize an explicit price-and-dalivka reply only when the source policy
+  opts in; resolve the abbreviated price against the fresh broker quote and use the
+  configured quote tolerance and bounded waiting window.
+- Open one independent 0.10-lot position with its own $15 price-distance stop
+  from its actual fill, a usable channel TP or a 1R fallback. Original positions
+  may be open, closed or absent; the linked source must verify direction.
+- Isolate add-ons from the original signal's updates and closures, and persist
+  a one-shot claim before sending to prevent replay. Keep source, price, age,
+  broker, margin and arm checks.
+- Exercise BUY/SELL, duplicate posts, closed or missing originals, independent
+  management, disarmed trading and lost broker responses in simulation.
+
+### Gold signal level fallback
+
+- Keep a verified gold entry eligible when channel TP or SL values are incomplete
+  or invalid, using the configured protective stop and 1R/runner targets where
+  needed, while reporting ignored levels.
+- Use the first two valid channel targets for two positions, retain a single
+  valid first target, and apply later matching updates without duplicate entry.
+- Preserve price, freshness, direction, position, broker and reached-target
+  checks, with simulated-broker coverage for partial levels and edits.
+
 ### Private recovery snapshot
 
 - Preserve the active channel brief and the owner's configured Codex executable

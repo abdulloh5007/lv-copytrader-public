@@ -21,6 +21,7 @@ class GoldEntryPlan:
     lots: tuple[float, ...] = ()
     channel_stop_supplied: bool = False
     channel_stop_pips: float | None = None
+    ignored_levels: tuple[str, ...] = ()
 
 
 def plan_gold_entry(
@@ -53,17 +54,18 @@ def plan_gold_entry(
         return GoldEntryPlan('reject', reason='edited_or_stale_signal')
     if margin_mode.lower() != 'hedging':
         return GoldEntryPlan('reject', reason='two_positions_require_hedging')
-    post = parse_uz_gold_post(text, quote=(bid + ask) / 2)
+    post = parse_uz_gold_post(text, quote=(bid + ask) / 2, fallback_levels=True)
     if post.kind in ('ignored', 'management'):
         return GoldEntryPlan('ignore', reason=post.action or 'not_an_entry')
     if post.kind != 'entry' or post.side is None or (post.zone is None and post.action != 'market_now'):
         return GoldEntryPlan('reject', reason=post.reason or 'invalid_signal')
-    if len(post.targets) not in (0, 2):
-        return GoldEntryPlan('reject', reason='requires_zero_or_two_targets')
+    ignored_levels = list(post.ignored_levels)
+    targets = post.targets[:2]
     entry = ask if post.side == 'buy' else bid
     # Do not enter (even with tolerance) when the first target is already reached.
-    if post.targets and ((post.side == 'sell' and bid <= post.targets[0]) or
-                         (post.side == 'buy' and ask >= post.targets[0])):
+    first_target = targets[0] if targets else post.verified_first_target
+    if first_target is not None and ((post.side == 'sell' and bid <= first_target) or
+                                     (post.side == 'buy' and ask >= first_target)):
         return GoldEntryPlan('reject', reason='target_reached_before_entry', side=post.side, zone=post.zone)
     if post.zone is not None and not post.zone[0] - zone_tolerance <= entry <= post.zone[1] + zone_tolerance:
         return GoldEntryPlan('reject', reason='quote_outside_entry_zone', side=post.side, zone=post.zone)
@@ -83,11 +85,17 @@ def plan_gold_entry(
     if stop <= 0:
         return GoldEntryPlan('reject', reason='invalid_stop')
     if (post.side == 'buy' and stop >= entry) or (post.side == 'sell' and stop <= entry):
-        return GoldEntryPlan('reject', reason='channel_stop_not_protective')
+        stop = entry - stop_distance if post.side == 'buy' else entry + stop_distance
+        if stop <= 0:
+            return GoldEntryPlan('reject', reason='invalid_stop')
+        ignored_levels.append('invalid_stop')
+        return GoldEntryPlan('open', side=post.side, zone=post.zone, entry=entry, stop=stop,
+                             targets=targets, lots=(float(half), float(half)),
+                             ignored_levels=tuple(ignored_levels))
     return GoldEntryPlan('open', side=post.side, zone=post.zone, entry=entry, stop=stop,
-                         targets=post.targets, lots=(float(half), float(half)),
+                         targets=targets, lots=(float(half), float(half)),
                          channel_stop_supplied=post.sl is not None or post.sl_pips is not None,
-                         channel_stop_pips=post.sl_pips)
+                         channel_stop_pips=post.sl_pips, ignored_levels=tuple(ignored_levels))
 
 
 async def wait_for_gold_entry(attempt, *, wait_seconds: float, sleep=None, monotonic=None):
@@ -107,7 +115,8 @@ async def wait_for_gold_entry(attempt, *, wait_seconds: float, sleep=None, monot
     deadline = monotonic() + wait_seconds
     result = await attempt()
     safe_reasons = {'gold channel entry refused: quote_outside_entry_zone',
-                    'gold channel entry refused: targets_changed_before_order'}
+                    'gold channel entry refused: targets_changed_before_order',
+                    'gold channel add-on refused: quote_outside_addon_zone'}
     while (result.get('ok') is False
            and result.get('stage') == 'channel_profile'
            and result.get('message') in safe_reasons):

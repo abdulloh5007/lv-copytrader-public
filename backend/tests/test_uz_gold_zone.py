@@ -188,7 +188,7 @@ def test_entry_identity_does_not_guess_short_prices_or_turn_management_into_entr
     from app.ai.uz_gold_zone import entry_identity
     assert entry_identity('68-64 buy zone') == ('buy', '68', '64')
     assert entry_identity('68-64 sell zone') == ('sell', '68', '64')
-    assert entry_identity('68-64 buy reentry') is None
+    assert entry_identity('68-64 buy reentry') == ('buy', '68', '64')
 
 
 async def test_direction_edit_disarms_research_source_and_keeps_positions_untouched(data_dir):
@@ -263,3 +263,14 @@ async def test_deleting_new_source_signal_disarms_without_closing_positions(data
     ingestor._flatten=no_close
     await ingestor.handle_deleted([45])
     assert not await runtime.armed() and calls == []
+
+
+def test_explicit_reentry_is_entry_but_ambiguous_or_management_is_not():
+    from app.ai.uz_gold_zone import entry_identity
+    post = parse_uz_gold_post('80-85 sell reentry', quote=3881)
+    assert (post.kind, post.side, post.zone) == ('entry', 'sell', (3880, 3885))
+    assert entry_identity('80-85 sell reentry') == ('sell', '80', '85')
+    for text in ('80-85 reentry', '80-85 sell reentry?', 'BTC 80-85 sell reentry',
+                 '80-85 sell reentry or buy', 'Stop urdi reentry beraman'):
+        assert entry_identity(text) is None
+        assert parse_uz_gold_post(text, quote=3881).kind != 'entry'

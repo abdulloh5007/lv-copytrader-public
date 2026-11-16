@@ -1731,6 +1731,9 @@ class _AgentRun:
         if row is None:
             return await self._finalize(STATUS_ERROR, error="gold channel message missing")
         text = str(row.text or "")
+        from app.ai.uz_gold_addon import is_addon_post
+        if is_addon_post(text):
+            return await self._run_uz_gold_addon(row)
         parsed = parse_uz_gold_post(text, quote=None)
         ctx = RunContext(run_id=self.run_id, signal_ref=self.signal_ref, source_id=self.source_id,
                          message_row_id=self.message_row_id, origin="agent")
@@ -1755,14 +1758,18 @@ class _AgentRun:
             if first_observed_edit:
                 from dataclasses import replace
                 ctx = replace(ctx, first_observed_edit=True)
-        is_targets = not first_observed_edit and bool(row.edit_date or row.reply_to_message_id) and target_count(text) == 2
+        is_targets = not first_observed_edit and bool(row.edit_date or row.reply_to_message_id) and target_count(text) >= 1
         is_stop = False
+        invalid_stop = False
         if not first_observed_edit and (row.edit_date or row.reply_to_message_id):
             try:
                 stop_price, stop_pips = channel_stop(text)
             except ValueError:
-                return await self._finalize(STATUS_ERROR, error="Ambiguous channel stop; existing positions were not changed.")
+                stop_price, stop_pips = None, None
+                invalid_stop = True
             is_stop = stop_price is not None or stop_pips is not None
+        if invalid_stop and not is_targets:
+            return await self._finalize(STATUS_ERROR, error="Invalid channel stop; existing protection was kept.")
         if is_be or is_targets or is_stop:
             result = await self.runtime.executor.update_uz_gold_signal(ctx)
             await self._add_step("tool_result", name="gold_channel_update", payload={"result": result},
@@ -1841,6 +1848,45 @@ class _AgentRun:
             # The executor already sent the broker-rejection card with its retcode.
             self.gold_entry_post = None
         return await self._finalize(STATUS_FINISHED, decision="ignored", summary=reason)
+
+    async def _run_uz_gold_addon(self, row: Message) -> dict[str, Any]:
+        """Handle one explicit, linked add-on without re-opening the original pair."""
+        from app.ai.uz_gold_plan import wait_for_gold_entry
+        from dataclasses import replace
+        self.gold_entry_post = str(row.text or "")
+        self.gold_entry_link = row.permalink
+        ctx = RunContext(run_id=self.run_id, signal_ref=self.signal_ref, source_id=self.source_id,
+                         message_row_id=self.message_row_id, origin="uz_gold_addon")
+        async with session_scope() as session:
+            policy = await get_setting(session, "trading.uz_gold_policy", {})
+        wait = policy.get("entry_wait_seconds", 0) if isinstance(policy, dict) else 0
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 900:
+            return await self._finalize(STATUS_ERROR, error="invalid gold channel wait policy")
+        if row.catchup or row.edit_date or row.posted_at is None:
+            return await self._finalize(STATUS_FINISHED, decision="ignored", summary="Add-on is not a new live post.")
+        stamp = row.posted_at.replace(tzinfo=timezone.utc) if row.posted_at.tzinfo is None else row.posted_at
+        age = time.time() - stamp.timestamp()
+        if not 0 <= age <= 60:
+            return await self._finalize(STATUS_FINISHED, decision="ignored", summary="Add-on signal is too old.")
+        if wait and getattr(self.runtime, "uz_gold_addon_waiting", False):
+            return await self._finalize(STATUS_FINISHED, decision="ignored", summary="Another add-on is already waiting.")
+        if wait:
+            self.runtime.uz_gold_addon_waiting = True
+        try:
+            work = replace(ctx, waiting_for_zone=bool(wait))
+            result = await wait_for_gold_entry(lambda: self.runtime.executor.open_uz_gold_addon(work),
+                                               wait_seconds=max(0.0, wait - age) if wait else 0)
+        finally:
+            if wait:
+                self.runtime.uz_gold_addon_waiting = False
+        await self._add_step("tool_result", name="gold_channel_addon", payload={"result": result},
+                             ok=bool(result.get("ok")))
+        if result.get("safety_failures") or result.get("partial_fill"):
+            await self.runtime.set_armed(False)
+            return await self._finalize(STATUS_ERROR, error="Add-on outcome or protection is uncertain; check positions.")
+        if result.get("ok"):
+            return await self._finalize(STATUS_FINISHED, decision="acted", summary=str(result.get("message") or ""))
+        return await self._finalize(STATUS_FINISHED, decision="ignored", summary=str(result.get("message") or "Add-on not opened."))
 
     async def _channel_followup(self, row: Message | None) -> dict[str, Any] | None:
         """Attach a verified channel ladder before AI; never fall back to a new open."""

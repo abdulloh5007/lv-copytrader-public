@@ -61,18 +61,40 @@ def test_zone_tolerance_is_bounded_and_uses_executable_side_of_quote():
     assert plan('60-65 buy zone TP 66 TP 95', bid=4165.9, ask=4166, zone_tolerance=2).reason == 'target_reached_before_entry'
 
 
-def test_invalid_direction_targets_or_hedging_never_produce_a_plan():
-    assert plan('60-65 buy zone TP 45 TP 25').action == 'reject'
-    assert plan('60-65 buy zone TP 85').reason == 'requires_zero_or_two_targets'
+def test_invalid_direction_or_hedging_never_produce_a_plan():
+    assert plan('60-65 buy sell zone TP 85 TP 95').action == 'reject'
     assert plan('60-65 sell zone TP 45 TP 25', margin_mode='netting').reason == 'two_positions_require_hedging'
     assert plan('60-65 sell zone TP 45 TP 25', total_lots=0.03).reason == 'invalid_two_leg_volume'
     assert plan('60-65 sell zone TP 45 TP 25', bid=float('nan')).reason == 'invalid_numeric_input'
 
 
+def test_unusable_levels_fall_back_independently_and_keep_verified_protection():
+    partial = plan('60-65 sell zone TP 3')
+    assert partial.action == 'open' and partial.targets == ()
+    assert partial.stop == 4176 and partial.ignored_levels == ('invalid_targets',)
+    invalid_targets = plan('60-65 buy zone SL 4150 TP 45 TP 25')
+    assert invalid_targets.action == 'open' and invalid_targets.targets == ()
+    assert invalid_targets.stop == 4150 and invalid_targets.channel_stop_supplied
+    invalid_stop = plan('60-65 sell zone SL 4100 TP 45 TP 25')
+    assert invalid_stop.action == 'open' and invalid_stop.stop == 4176
+    assert invalid_stop.targets == (4145, 4125) and not invalid_stop.channel_stop_supplied
+    assert invalid_stop.ignored_levels == ('invalid_stop',)
+
+
+def test_first_two_channel_targets_and_single_target_are_retained():
+    assert plan('60-65 sell zone TP 45 TP 25 TP 15').targets == (4145, 4125)
+    assert plan('60-65 sell zone TP 45').targets == (4145,)
+
+
+def test_known_first_target_still_blocks_entry_when_later_target_is_invalid():
+    assert plan('60-65 sell zone TP 45 TP 9000', bid=4144, ask=4144.1).reason == 'target_reached_before_entry'
+
+
 def test_management_never_produces_an_entry():
     assert plan('B/u ga obqoying').action == 'ignore'
     assert plan('Yoping buylarni').action == 'ignore'
-    assert plan('60-65 buy reentry TP 85 TP 95').action == 'ignore'
+    assert plan('60-65 reentry TP 85 TP 95').action == 'ignore'
+    assert plan('60-65 buy reentry TP 85 TP 95').action == 'open'
 
 
 def test_channel_pip_stop_uses_ten_cents_per_gold_pip():
@@ -605,6 +627,101 @@ async def test_fake_broker_sets_both_targets_when_supplied_in_original(data_dir)
     assert result['ok'], result
     assert sorted(p['tp'] for p in broker.positions.values()) == [2384, 2387]
     assert all(abs(p['price_open'] - p['sl'] - 15) < 0.5 for p in broker.positions.values())
+
+
+async def test_incomplete_target_then_three_targets_update_same_two_positions(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from app.trading.executor import RunContext
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider('yes')
+    _install_provider(runtime, provider)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    source_id, row_id = await _seed('81-78 buy zone TP 3', message_id=203, posted_at=now)
+    opened = await _drive(runtime, provider, row_id)
+    assert opened['decision'] == 'acted', opened
+    assert len(broker.positions) == 2 and all(p['sl'] > 0 for p in broker.positions.values())
+    assert sum(p['tp'] == 0 for p in broker.positions.values()) == 1
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=203, edit_date=1, revision=2,
+                       kind='text', status='pending', text='81-78 buy zone TP 84 TP 87 TP 90', posted_at=now)
+        session.add(edit); await session.flush()
+        edit_id = edit.id
+    result = await _drive(runtime, provider, edit_id)
+    assert result['decision'] == 'acted', result
+    assert len(broker.positions) == 2 and sorted(p['tp'] for p in broker.positions.values()) == [2384, 2387]
+
+
+async def test_single_target_edit_updates_only_first_leg_without_duplicate(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider('yes')
+    _install_provider(runtime, provider)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    source_id, row_id = await _seed('81-78 buy zone', message_id=205, posted_at=now)
+    assert (await _drive(runtime, provider, row_id))['decision'] == 'acted'
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=205, edit_date=1, revision=2,
+                       kind='text', status='pending', text='81-78 buy zone TP 84', posted_at=now)
+        session.add(edit); await session.flush()
+        edit_id = edit.id
+    result = await _drive(runtime, provider, edit_id)
+    assert result['decision'] == 'acted', result
+    assert len(broker.positions) == 2 and sorted(p['tp'] for p in broker.positions.values()) == [0, 2384]
+
+
+@pytest.mark.parametrize(('text', 'expected_tps', 'fallback_stop'), [
+    ('81-78 buy zone TP 84', [0, 2384], True),
+    ('81-78 buy zone SL 2400 TP 84 TP 87', [2384, 2387], True),
+    ('81-78 buy zone SL 2370 TP 3', None, False),
+])
+async def test_fake_broker_uses_valid_levels_and_fallbacks(data_dir, text, expected_tps, fallback_stop):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from app.trading.executor import RunContext
+    from tests.test_executor import _build
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        source = Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True)
+        session.add(source); await session.flush()
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+        row = Message(source_id=source.id, message_id=204, kind='text', status='pending', text=text,
+                      posted_at=datetime.now(timezone.utc).replace(tzinfo=None))
+        session.add(row); await session.flush()
+        ctx = RunContext(run_id='test1234', source_id=source.id, message_row_id=row.id,
+                         signal_ref=row.signal_ref, origin='agent')
+    result = await executor.open_uz_gold_signal(ctx)
+    assert result['ok'], result
+    assert len(broker.positions) == 2
+    if expected_tps is None:
+        assert sum(p['tp'] == 0 for p in broker.positions.values()) == 1
+    else:
+        assert sorted(p['tp'] for p in broker.positions.values()) == expected_tps
+    for position in broker.positions.values():
+        if fallback_stop:
+            assert abs(position['price_open'] - position['sl'] - 15) < .5
+        else:
+            assert position['sl'] == 2370
 
 
 async def test_fake_broker_attaches_targets_then_break_even_without_extra_orders(data_dir):
@@ -1539,3 +1656,26 @@ async def test_ambiguous_reentry_instruction_does_not_disable_trading(data_dir):
     result = await _drive(runtime, provider, row_id)
     assert result['status'] == 'error' and await runtime.armed()
     assert not broker.positions
+
+
+async def test_explicit_reentry_runs_through_three_checks_and_broker_simulation(data_dir):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Example', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2,
+                          'stop_distance': 15.0, 'entry_wait_seconds': 300, 'zone_tolerance': 2})
+    provider = _ScriptedProvider('yes')
+    _install_provider(runtime, provider)
+    broker.move('XAUUSDm', 3882)
+    _, row_id = await _seed('80-85 sell reentry', message_id=12112)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'acted', repr(result)
+    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert all(p['type'] == 1 and p['volume'] == .1 and p['sl'] > p['price_open']
+               for p in broker.positions.values())
