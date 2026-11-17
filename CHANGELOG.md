@@ -5,6 +5,13 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Independent signal workers
+
+- Classify each new entry once per worker instead of asking the same model
+  three times, leaving the other workers free for unrelated messages.
+- Keep broker-write serialization, signal-chain guards and refusal on an
+  uncertain or unavailable gold-signal classifier.
+
 ### Telegram delivery diagnostics
 
 - Record bounded, content-free transport and active-channel difference timing

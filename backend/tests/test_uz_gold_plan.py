@@ -415,7 +415,7 @@ def test_observed_selldaman_signal_keeps_zone_and_risk_guards():
     assert plan_gold_entry('07-11 selldaman', **{**args, 'tick_ts': 990}).reason == 'stale_quote'
 
 
-async def test_selldaman_zone_passes_three_ai_checks_before_two_protected_legs(data_dir):
+async def test_selldaman_zone_passes_one_ai_check_before_two_protected_legs(data_dir):
     from app.db import session_scope, set_setting
     from app.models import Source
     from tests.test_executor import _build
@@ -432,7 +432,7 @@ async def test_selldaman_zone_passes_three_ai_checks_before_two_protected_legs(d
     _, row_id = await _seed('78-81 selldaman', message_id=815)
     result = await _drive(runtime, provider, row_id)
     assert result['decision'] == 'acted', result
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert all(p['volume'] == 0.1 and p['sl'] > p['price_open'] for p in broker.positions.values())
 
 
@@ -441,7 +441,7 @@ async def test_selldaman_zone_passes_three_ai_checks_before_two_protected_legs(d
     ('sell', (2375, 2372), '78-81'),
 ])
 @pytest.mark.parametrize('rapid', [False, True])
-async def test_market_now_three_votes_then_later_targets_only_update_same_positions(data_dir, side, targets, zone, rapid):
+async def test_market_now_one_check_then_later_targets_only_update_same_positions(data_dir, side, targets, zone, rapid):
     from datetime import datetime, timezone
     from app.db import session_scope, set_setting
     from app.models import Message, Source
@@ -460,7 +460,7 @@ async def test_market_now_three_votes_then_later_targets_only_update_same_positi
     source_id, row_id = await _seed(f'Gold {side} now', message_id=810, posted_at=now)
     result = await _drive(runtime, provider, row_id)
     assert result['decision'] == 'acted', result
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     tickets = set(broker.positions)
     positions = list(broker.positions.values())
     assert all(p['volume'] == 0.1 and p['sl'] > 0 for p in positions)
@@ -488,7 +488,7 @@ async def test_market_now_three_votes_then_later_targets_only_update_same_positi
             session.add(edit); await session.flush(); latest_id = edit.id
     updated = await _drive(runtime, provider, latest_id)
     assert updated['decision'] == 'acted', updated
-    assert set(broker.positions) == tickets and len(provider.calls) == 3
+    assert set(broker.positions) == tickets and len(provider.calls) == 1
 
 
 @pytest.mark.parametrize('scenario', ['same_signal', 'direction_flip', 'zone_changed', 'other_post', 'deleted'])
@@ -524,7 +524,7 @@ async def test_market_now_fast_edits_during_ai_do_not_lose_or_change_the_signal(
             session.add(Message(source_id=source_id, message_id=813, revision=1, edit_date=0,
                                 kind='text', status='pending', text='Close the trade', posted_at=now))
     result = await _drive(runtime, provider, row_id)
-    assert len(provider.calls) == (0 if scenario == 'deleted' else 3)
+    assert len(provider.calls) == (0 if scenario == 'deleted' else 1)
     if scenario == 'same_signal':
         assert result['decision'] == 'acted', result
         assert len(broker.positions) == 2
@@ -811,7 +811,7 @@ async def test_fake_broker_refuses_direction_flip_and_unthreaded_break_even(data
     assert {k:(v['sl'],v['tp']) for k,v in broker.positions.items()} == before
 
 
-async def test_end_to_end_three_checks_open_then_edit_targets_and_reply_break_even(data_dir):
+async def test_end_to_end_one_check_open_then_edit_targets_and_reply_break_even(data_dir):
     from datetime import datetime, timedelta, timezone
     from app.db import session_scope, set_setting
     from app.models import Message, Source
@@ -829,7 +829,7 @@ async def test_end_to_end_three_checks_open_then_edit_targets_and_reply_break_ev
     source_id, row_id = await _seed('81-78 buy zone', message_id=501, posted_at=now)
     opened = await _drive(runtime, provider, row_id)
     assert opened['decision'] == 'acted', opened
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert sorted(p['volume'] for p in broker.positions.values()) == [0.1, 0.1]
     assert all(abs(p['price_open'] - p['sl'] - 15) < 0.5 for p in broker.positions.values())
     async with session_scope() as session:
@@ -837,7 +837,7 @@ async def test_end_to_end_three_checks_open_then_edit_targets_and_reply_break_ev
         session.add(edit); await session.flush(); edit_id = edit.id
     updated = await _drive(runtime, provider, edit_id)
     assert updated['decision'] == 'acted', updated
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert sorted(p['tp'] for p in broker.positions.values()) == [2384, 2387]
     broker.move('XAUUSDm', 2383)
     async with session_scope() as session:
@@ -845,7 +845,7 @@ async def test_end_to_end_three_checks_open_then_edit_targets_and_reply_break_ev
         session.add(reply); await session.flush(); reply_id = reply.id
     be = await _drive(runtime, provider, reply_id)
     assert be['decision'] == 'acted', be
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert all(p['sl'] >= p['price_open'] for p in broker.positions.values())
 
 
@@ -895,27 +895,21 @@ async def test_confirmed_volume_and_be_only_after_verified_tp_close(data_dir):
 
 
 @pytest.mark.parametrize('signal', ['81-78 buy zone', 'Gold sell now'])
-async def test_disagreeing_three_ai_checks_never_open_a_position(data_dir, signal):
+async def test_uncertain_single_ai_check_never_opens_a_position(data_dir, signal):
     from app.db import session_scope, set_setting
     from app.models import Source
     from tests.test_executor import _build
     from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
-    class VotingProvider(_ScriptedProvider):
-        def __init__(self):
-            super().__init__(''); self.votes = ['yes', 'no', 'uncertain']
-        def run(self, **kwargs):
-            each = _ScriptedProvider(self.votes[len(self.calls)])
-            stream = each.run(**kwargs); self.calls.extend(each.calls); return stream
     executor, broker, runtime = await _build(data_dir, armed=True)
     chat_id = -1005555555555
     async with session_scope() as session:
         session.add(Source(kind='telegram', chat_id=chat_id, title='Example signals', username=None, entity_type='channel', is_active=True))
         await set_setting(session, 'ingest.research_only_chat_id', chat_id)
         await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': 0.2, 'stop_distance': 15.0})
-    provider=VotingProvider(); _install_provider(runtime, provider)
+    provider=_ScriptedProvider('uncertain'); _install_provider(runtime, provider)
     _, row_id = await _seed(signal, message_id=701)
     result = await _drive(runtime, provider, row_id)
-    assert result['status'] == 'error' and len(provider.calls) == 3
+    assert result['status'] == 'error' and len(provider.calls) == 1
     assert not broker.positions
 
 
@@ -1430,7 +1424,7 @@ async def test_zone_entry_fast_target_edit_after_ai_checks_is_safe(data_dir, cha
             session.add(Message(source_id=source_id, message_id=2902, kind='text', status='pending',
                                 text='close', posted_at=now))
     result = await _drive(runtime, provider, row_id)
-    assert len(provider.calls) == 3
+    assert len(provider.calls) == 1
     if change == 'targets':
         assert result['decision'] == 'acted', result
         assert len(broker.positions) == 2 and sorted(p['tp'] for p in broker.positions.values()) == [2372, 2375]
@@ -1463,7 +1457,7 @@ async def test_first_observed_edit_matches_1201_signal_and_never_replays(data_di
     provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
     result = await _drive(runtime, provider, row_id)
     assert result['decision'] == 'acted', result
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert sorted(p['tp'] for p in broker.positions.values()) == [3925, 3945]
     assert all(p['volume'] == 0.1 and abs(p['sl'] - p['price_open'] - 15) < 0.5
                for p in broker.positions.values())
@@ -1635,7 +1629,7 @@ async def test_stop_announcement_does_not_disable_next_separate_sell_signal(data
     _, entry_id = await _seed('3914-19 sell zone minimal risk', message_id=12079)
     result = await _drive(runtime, provider, entry_id)
     assert result['decision'] == 'acted', repr(result)
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert all(p['type'] == 1 and p['volume'] == .1 and p['sl'] > p['price_open']
                for p in broker.positions.values())
 
@@ -1658,7 +1652,7 @@ async def test_ambiguous_reentry_instruction_does_not_disable_trading(data_dir):
     assert not broker.positions
 
 
-async def test_explicit_reentry_runs_through_three_checks_and_broker_simulation(data_dir):
+async def test_explicit_reentry_runs_through_one_check_and_broker_simulation(data_dir):
     from app.db import session_scope, set_setting
     from app.models import Source
     from tests.test_executor import _build
@@ -1676,6 +1670,61 @@ async def test_explicit_reentry_runs_through_three_checks_and_broker_simulation(
     _, row_id = await _seed('80-85 sell reentry', message_id=12112)
     result = await _drive(runtime, provider, row_id)
     assert result['decision'] == 'acted', repr(result)
-    assert len(provider.calls) == 3 and len(broker.positions) == 2
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
     assert all(p['type'] == 1 and p['volume'] == .1 and p['sl'] > p['price_open']
                for p in broker.positions.values())
+
+
+async def test_separate_gold_messages_use_free_workers_without_duplicate_ai_calls(data_dir):
+    import asyncio
+    from app.ai.base import DoneDelta, TextDelta
+    from app.ai.loop import run_agent
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _install_provider, _ScriptedProvider, _seed
+
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release_first = asyncio.Event()
+
+    class BlockingProvider(_ScriptedProvider):
+        def __init__(self):
+            super().__init__('no')
+
+        def run(self, **kwargs):
+            self.calls.append(kwargs)
+            number = len(self.calls)
+
+            async def stream():
+                if number == 1:
+                    first_started.set()
+                    await release_first.wait()
+                elif number == 2:
+                    second_started.set()
+                yield TextDelta(text='no')
+                yield DoneDelta(stop_reason='end_turn', assistant_blocks=[])
+            return stream()
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Example', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = BlockingProvider()
+    _install_provider(runtime, provider)
+    _, first_id = await _seed('81-78 buy zone', message_id=8001)
+    first_task = asyncio.create_task(run_agent(runtime, message_row_id=first_id, kind='signal'))
+    second_task = None
+    try:
+        await asyncio.wait_for(first_started.wait(), timeout=5)
+        _, second_id = await _seed('81-78 sell zone', message_id=8002)
+        second_task = asyncio.create_task(run_agent(runtime, message_row_id=second_id, kind='signal'))
+        await asyncio.wait_for(second_started.wait(), timeout=5)
+        assert not first_task.done()
+        assert len(provider.calls) == 2
+        assert not broker.positions
+    finally:
+        release_first.set()
+        await asyncio.gather(first_task, *([second_task] if second_task else []), return_exceptions=True)

@@ -1411,31 +1411,17 @@ class _AgentRun:
                 channel_brief = ""
 
         started = time.monotonic()
-        from app.ai.xauuad_template import CHANNEL_CHAT_ID
-
-        async def classify_one() -> str:
-            return await classify_signal(
-                self.provider,
-                model=self.model or "",
-                capabilities=self.caps,
-                text=self.triage_text,
-                image_count=self.triage_image_count,
-                channel_brief=channel_brief,
-            )
-
-        # Independent, tool-free model sessions review this source's entry in
-        # parallel. Only a two-vote agreement may cause automatic fast entry;
-        # verified follow-up protection is applied separately before triage.
-        votes = (list(await asyncio.gather(*(classify_one() for _ in range(3))))
-                 if self.source_chat_id == CHANNEL_CHAT_ID or self.uz_gold_live else [await classify_one()])
-        if len(votes) == 1:
-            verdict = votes[0]
-        elif votes.count("yes") >= 2:
-            verdict = "yes"
-        elif votes.count("no") >= 2:
-            verdict = "no"
-        else:
-            verdict = "uncertain"
+        # A worker owns one message and makes one classification call. The
+        # other ingest workers remain free to process unrelated messages.
+        verdict = await classify_signal(
+            self.provider,
+            model=self.model or "",
+            capabilities=self.caps,
+            text=self.triage_text,
+            image_count=self.triage_image_count,
+            channel_brief=channel_brief,
+        )
+        votes = [verdict]  # Preserve the existing run-step schema for the UI.
         latency_ms = int((time.monotonic() - started) * 1000)
         self.provider_latency_ms += latency_ms
         await self._add_step(
@@ -1797,7 +1783,7 @@ class _AgentRun:
         if skipped is not None:
             return skipped
         if self.triage_verdict != "yes":
-            return await self._finalize(STATUS_ERROR, error="three AI checks did not agree on an entry")
+            return await self._finalize(STATUS_ERROR, error="AI classification was uncertain or unavailable; no entry was sent")
         # Waiting is opt-in and ephemeral: process restarts never replay a signal.
         # Only one run can occupy a waiting slot; broker locks are acquired only
         # for individual attempts, never during the sleep between quotes.

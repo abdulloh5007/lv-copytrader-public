@@ -258,42 +258,28 @@ async def test_signal_pipeline_opens_then_attaches_even_if_provider_goes_down(da
     assert len(broker.positions) == 2
 
 
-async def test_three_independent_ai_votes_gate_new_entries(data_dir):
+async def test_one_ai_check_gates_each_new_entry(data_dir):
     from app.ai.xauuad_template import CHANNEL_CHAT_ID
     from app.db import session_scope
     from app.models import Source
     from tests.test_executor import _build
     from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
 
-    class VotingProvider(_ScriptedProvider):
-        def __init__(self, votes):
-            super().__init__('')
-            self.votes = votes
-
-        def run(self, **kwargs):
-            independent = _ScriptedProvider(self.votes[len(self.calls)])
-            stream = independent.run(**kwargs)
-            self.calls.extend(independent.calls)
-            return stream
-
     executor, broker, runtime = await _build(data_dir)
     async with session_scope() as session:
         session.add(Source(kind='telegram', chat_id=CHANNEL_CHAT_ID, title='Test', username='test',
                            entity_type='channel', is_active=True))
-    # Without two yes votes the verified profile must not open a position.
-    provider = VotingProvider(['yes', 'no', 'uncertain'])
+    provider = _ScriptedProvider('no')
     _install_provider(runtime, provider)
     _, first = await _seed('XAUUSD BUY 2381=78', message_id=990)
     await _drive(runtime, provider, first)
-    assert len(provider.calls) == 3
-    assert not broker.positions
+    assert len(provider.calls) == 1 and not broker.positions
 
-    # Two independent yes votes allow the deterministic source-specific entry.
-    provider = VotingProvider(['yes', 'no', 'yes'])
+    provider = _ScriptedProvider('yes')
     _install_provider(runtime, provider)
     _, second = await _seed('XAUUSD BUY 2381=78', message_id=991)
     result = await _drive(runtime, provider, second)
-    assert len(provider.calls) == 3
+    assert len(provider.calls) == 1
     assert result['decision'] == 'acted', result
     assert sorted(position['volume'] for position in broker.positions.values()) == [0.2, 0.2]
 

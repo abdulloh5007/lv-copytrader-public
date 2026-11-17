@@ -245,7 +245,7 @@ async def test_first_seen_edit_is_evaluated_as_new_signal(data_dir, text):
     provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
     result = await _drive(runtime, provider, row_id)
     assert result['decision'] == 'acted', result
-    assert len(broker.positions) == 2 and len(provider.calls) == 3
+    assert len(broker.positions) == 2 and len(provider.calls) == 1
     assert all(p['volume'] == 0.1 and p['sl'] > 0 for p in broker.positions.values())
     assert len(sent) == 1 and 'ВХОД' in sent[0][0][1]
 
