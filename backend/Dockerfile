@@ -37,7 +37,7 @@ RUN npm run typecheck && npm test && npm run build
 # =======================================================================================
 # Stage 2 — the backend runtime.
 # =======================================================================================
-FROM python:3.12-alpine3.24 AS runtime
+FROM python:3.15-alpine3.24 AS runtime
 
 # DATA_DIR holds the SQLite database, downloaded signal images and Telethon session
 # material; FRONTEND_DIST is where FastAPI looks for the built SPA. Both match app/config.py
