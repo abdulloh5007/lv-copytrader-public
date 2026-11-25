@@ -19,6 +19,7 @@ private and public releases share the same version, with separate Git histories.
 - Include estimated simulation P&L in private performance reports and test TP,
   SL, and the absence of broker writes after the daily goal with the fake broker.
 - Preserve the effective performance and daily-target settings in owner snapshots.
+- Run daily performance, signal closure and the read-only MT5 quote RPC tests in CI.
 - Include entry fees and commissions when reporting the realized result of a
   position closed by the app.
 

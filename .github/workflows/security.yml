@@ -34,3 +34,6 @@ jobs:
         run: PYTHONPATH=cli:. python -m unittest discover -s support_service/tests -v
       - run: python -m pytest -q tests/test_auth.py tests/test_admin_password.py tests/test_password_verify.py tests/test_security_hardening.py tests/test_waitlist_security.py tests/test_public_demo.py
         working-directory: backend
+      - name: Performance, signal and MT5 quote checks (simulated broker)
+        run: python -m pytest -q tests/test_performance.py tests/test_uz_gold_close.py tests/test_sidecar.py
+        working-directory: backend

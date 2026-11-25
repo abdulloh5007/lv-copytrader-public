@@ -99,7 +99,7 @@ def test_dispatch_is_an_explicit_whitelist(sidecar) -> None:
     """Never getattr(mt5, name): that turns one bad request into arbitrary code."""
     assert set(sidecar.METHODS) == {
         "account_info", "terminal_info", "symbols_get", "symbol_info", "symbol_select",
-        "symbol_info_tick", "copy_rates_from_pos", "positions_get", "orders_get",
+        "symbol_info_tick", "copy_rates_from_pos", "copy_quote_ticks", "positions_get", "orders_get",
         "history_deals_get", "order_check", "order_send", "order_calc_margin", "ping",
         # `relogin` re-attaches the terminal to a different account without a container
         # restart. Without it, changing the MT5 account in Settings stored the new
@@ -150,6 +150,23 @@ def test_rates_survive_serialisation(sidecar) -> None:
     raw = sidecar.METHODS["copy_rates_from_pos"]("XAUUSDm", 16385, 0, 1)
     encoded = json.loads(json.dumps(sidecar._to_jsonable(raw)))
     assert encoded[0][0] == 1700000000
+
+
+def test_quote_history_returns_bid_ask_and_rejects_oversized_windows(sidecar, monkeypatch) -> None:
+    start = 1700000000
+    monkeypatch.setattr(sidecar.mt5, "COPY_TICKS_INFO", 1, raising=False)
+    calls = []
+
+    def copy_ticks(symbol, lower, upper, flags):
+        calls.append((symbol, lower, upper, flags))
+        return [{"time_msc": start * 1000, "bid": 2380.5, "ask": 2380.75, "last": 0.0}]
+
+    monkeypatch.setattr(sidecar.mt5, "copy_ticks_range", copy_ticks, raising=False)
+    history = sidecar.METHODS["copy_quote_ticks"]
+    assert history("XAUUSDm", start, start + 900) == [[start * 1000, 2380.5, 2380.75]]
+    with pytest.raises(ValueError, match="at most 900 seconds"):
+        history("XAUUSDm", start, start + 901)
+    assert calls == [("XAUUSDm", start, start + 900, 1)]
 
 
 def test_order_send_none_is_a_null_result_not_an_error(sidecar) -> None:
