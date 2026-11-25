@@ -18,7 +18,7 @@ jobs:
       - name: Isolate CI from owner configuration
         # Private snapshots are for restore, never inputs to CI tests.
         run: rm -f -- .env backend/.env
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24.22.1'
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
