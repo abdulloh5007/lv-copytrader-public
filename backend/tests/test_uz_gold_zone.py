@@ -77,6 +77,10 @@ def test_conflicting_full_prices_or_instrument_are_rejected():
 
 def test_management_messages_do_not_become_new_entries():
     assert parse_uz_gold_post('B/u ga obqoying❗️', quote=4130).action == 'break_even_request'
+    assert parse_uz_gold_post('B/u da yoping narx entry zoneda', quote=4130).action == 'close_at_break_even_request'
+    assert parse_uz_gold_post('b/u da save qildingiz dep o’ylayman', quote=4130).kind == 'ignored'
+    assert parse_uz_gold_post('Hope you closed at b/u earlier', quote=4130).kind == 'ignored'
+    assert parse_uz_gold_post('Do not close at b/u', quote=4130).kind == 'ignored'
     assert parse_uz_gold_post('Yoping buylarni', quote=4130).action == 'close_request'
     assert parse_uz_gold_post('09-14 reentry 20sl zone', quote=4130).action == 'reentry_request'
     assert parse_uz_gold_post('450pips 2-TP✅', quote=4130).kind == 'ignored'
@@ -191,7 +195,7 @@ def test_entry_identity_does_not_guess_short_prices_or_turn_management_into_entr
     assert entry_identity('68-64 buy reentry') == ('buy', '68', '64')
 
 
-async def test_direction_edit_disarms_research_source_and_keeps_positions_untouched(data_dir):
+async def test_direction_edit_keeps_trading_state_for_research_source(data_dir):
     from datetime import datetime, timezone
     from app.db import session_scope, set_setting
     from app.models import Source
@@ -206,10 +210,10 @@ async def test_direction_edit_disarms_research_source_and_keeps_positions_untouc
     await ingestor.handle_message(text_message(42, '68-64 buy zone', chat_id=chat_id))
     assert await runtime.armed()
     edited = await ingestor.handle_message(text_message(42, '68-64 sell zone', chat_id=chat_id, edit_date=datetime.now(timezone.utc)), edited=True)
-    assert edited is not None and not await runtime.armed()
+    assert edited is not None and await runtime.armed()
 
 
-async def test_market_now_adding_zone_keeps_armed_but_direction_flip_disarms(data_dir):
+async def test_market_now_adding_zone_and_direction_flip_keep_trading_state(data_dir):
     from datetime import datetime, timedelta, timezone
     from app.db import session_scope, set_setting
     from app.models import Source
@@ -227,12 +231,12 @@ async def test_market_now_adding_zone_keeps_armed_but_direction_flip_disarms(dat
     assert await runtime.armed()
     await ingestor.handle_message(text_message(46, 'Gold buy now 4045-50 TP 4065 TP 4085',
                                               chat_id=chat_id, edit_date=datetime.now(timezone.utc) + timedelta(seconds=1)), edited=True)
-    assert not await runtime.armed()
+    assert await runtime.armed()
 
 
-async def test_deleting_market_now_signal_disarms(data_dir):
+async def test_deleting_market_now_signal_keeps_trading_setting(data_dir):
     from app.db import session_scope, set_setting
-    from app.models import Source
+    from app.models import Message, Source
     from tests.test_ingest import _build, text_message
     chat_id = -1005555555555
     ingestor, runtime, source_id = await _build(data_dir)
@@ -241,12 +245,16 @@ async def test_deleting_market_now_signal_disarms(data_dir):
         source.chat_id = chat_id
         await set_setting(session, 'ingest.research_only_chat_id', chat_id)
     await runtime.set_armed(True)
-    await ingestor.handle_message(text_message(47, 'Gold sell now', chat_id=chat_id))
+    row_id = await ingestor.handle_message(text_message(47, 'Gold sell now', chat_id=chat_id))
     await ingestor.handle_deleted([47])
-    assert not await runtime.armed()
+    assert await runtime.armed()
+    async with session_scope() as session:
+        row = await session.get(Message, row_id)
+        assert row.deleted_at is not None
+    assert await ingestor._skip_voided(row_id)
 
 
-async def test_deleting_new_source_signal_disarms_without_closing_positions(data_dir):
+async def test_deleting_new_source_signal_keeps_trading_and_positions(data_dir):
     from app.db import session_scope, set_setting
     from app.models import Source
     from tests.test_ingest import _build, text_message
@@ -262,7 +270,7 @@ async def test_deleting_new_source_signal_disarms_without_closing_positions(data
     async def no_close(*args, **kwargs): calls.append((args,kwargs))
     ingestor._flatten=no_close
     await ingestor.handle_deleted([45])
-    assert not await runtime.armed() and calls == []
+    assert await runtime.armed() and calls == []
 
 
 def test_explicit_reentry_is_entry_but_ambiguous_or_management_is_not():
@@ -274,3 +282,11 @@ def test_explicit_reentry_is_entry_but_ambiguous_or_management_is_not():
                  '80-85 sell reentry or buy', 'Stop urdi reentry beraman'):
         assert entry_identity(text) is None
         assert parse_uz_gold_post(text, quote=3881).kind != 'entry'
+def test_equivalent_entry_revision_requires_proven_same_zone_and_instructions():
+    from app.ai.uz_gold_zone import equivalent_entry_revision
+    before = 'Gold sell now 605-10'
+    assert equivalent_entry_revision(before, 'Gold sell now 3605-10\n\nTP 3585\nTP 3565')
+    assert not equivalent_entry_revision(before, 'Gold buy now 3605-10 TP 3620')
+    assert not equivalent_entry_revision(before, 'Gold sell now 3607-10 TP 3585')
+    assert not equivalent_entry_revision(before, 'Gold sell now 3605-10 CLOSE TP 3585')
+    assert not equivalent_entry_revision('Gold sell now 05-10', 'Gold sell now 605-10')

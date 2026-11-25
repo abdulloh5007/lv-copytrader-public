@@ -79,6 +79,7 @@ RETRYABLE_METHODS: Final[frozenset[str]] = frozenset(
         "orders_get",
         "history_deals_get",
         "copy_rates_from_pos",
+        "copy_quote_ticks",
         "ping",
         "order_calc_margin",
     }
@@ -475,6 +476,10 @@ class Mt5Rpc:
             start=start,
             count=count,
         )
+
+    async def copy_quote_ticks(self, symbol: str, start: int, end: int) -> list:
+        """Read chronological [time_msc, bid, ask] rows in broker time."""
+        return await self.call_raw("copy_quote_ticks", symbol=symbol, start=start, end=end)
 
     async def positions_get(self, **kw: Any) -> Any:
         """Return open positions as a tuple of namespaces (filters: ``symbol``/``ticket``/``group``)."""

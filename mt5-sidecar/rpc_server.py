@@ -1641,6 +1641,15 @@ def _m_copy_rates_from_pos(symbol: str, timeframe: int, start: int = 0, count: i
     return mt5.copy_rates_from_pos(str(symbol), int(timeframe), int(start), int(count))
 
 
+def _m_copy_quote_ticks(symbol: str, start: int, end: int) -> Any:
+    if type(start) is not int or type(end) is not int or not 0 < start <= end <= start + 900:
+        raise ValueError("quote history must be requested in a window of at most 900 seconds")
+    ticks = mt5.copy_ticks_range(str(symbol), start, end, mt5.COPY_TICKS_INFO)
+    if ticks is None:
+        return None
+    return [[int(t['time_msc']), float(t['bid']), float(t['ask'])] for t in ticks]
+
+
 def _m_positions_get(symbol: str | None = None, ticket: int | None = None, group: str | None = None) -> Any:
     # The package takes exactly one filter, or none at all; passing symbol=None is not the
     # same as passing nothing.
@@ -1793,6 +1802,7 @@ METHODS: dict[str, Callable[..., Any]] = {
     "symbol_select": _m_symbol_select,
     "symbol_info_tick": _m_symbol_info_tick,
     "copy_rates_from_pos": _m_copy_rates_from_pos,
+    "copy_quote_ticks": _m_copy_quote_ticks,
     "positions_get": _m_positions_get,
     "orders_get": _m_orders_get,
     "history_deals_get": _m_history_deals_get,

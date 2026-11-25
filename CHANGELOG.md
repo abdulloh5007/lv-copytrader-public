@@ -5,6 +5,60 @@ private and public releases share the same version, with separate Git histories.
 
 ## [Unreleased]
 
+### Trading performance
+
+- Add a shareable read-only calendar with weekly and monthly P&L, day details,
+  three intensity levels and optional weekly and monthly Telegram documents.
+- Add an opt-in daily profit threshold that blocks copied entries until the next
+  Tashkent day and requests closure of verified strategy exposure at the threshold.
+  Allow scheduling its first day and keep the threshold separate from the operator's trading switch.
+- Add optional dynamic gold sizing from the remaining daily profit goal, verified
+  channel protection, broker lot increments, margin and a minimum 1:1.5 risk/reward ratio.
+- After hitting the daily goal, continue classifying channel posts and track protected
+  simulated gold positions in a separate journal using broker bid and ask history.
+- Include estimated simulation P&L in private performance reports and test TP,
+  SL, and the absence of broker writes after the daily goal with the fake broker.
+- Preserve the effective performance and daily-target settings in owner snapshots.
+- Include entry fees and commissions when reporting the realized result of a
+  position closed by the app.
+
+### Gold-channel signal corrections
+
+- Distinguish a request to close at break-even from a request to move SL or a
+  retrospective comment, and verify a close target across a deleted repost.
+- Instruct the channel reviewer to retain evidence distinguishing break-even
+  closes, stop moves and commentary, together with source and reply links.
+- A deleted gold-channel post no longer disables trading globally: the deleted
+  post stays blocked, existing positions stay open, and the owner is notified.
+- Distinguish a verified fill at a changed price from an unknown broker result;
+  keep later legs unsent after a large deviation and report confirmed partial entries.
+- Recognize compact add-on posts such as `75dalivka 78 Sl` and use the verified
+  channel stop for that add-on instead of replacing it with the fallback stop.
+- Let the existing AI classification inspect recent channel context and identify
+  an earlier signal's targets when a new entry refers to the same trade idea;
+  verify the source and prices independently before sending broker orders.
+- Resolve explicitly referenced earlier channel take-profits for a later gold
+  entry, and revalidate the source and prices before each order leg.
+- Recheck fresh edited posts that were previously unrecognized with the AI and
+  alert the operator when the edit may be a signal; this review never places an order.
+- Treat an abbreviated entry zone and its provably equivalent full-price edit
+  as the same signal, retaining later SL and TP updates without disarming.
+- Reclassify a verified corrected entry after a prior revision was refused for
+  changing direction or zone; never replay a signal with a recorded trade.
+- Preserve existing positions on a material edit and report the change without
+  globally disabling trading. Test the reported edit and direction-change races.
+
+### Small-account gold signals
+
+- Add an opt-in small-account mode for one 0.01-lot gold entry, the channel's
+  first target or a fallback 1R target, and a seven-dollar fallback stop.
+- Limit linked add-ons to one 0.01-lot position per signal, independently
+  protected from its own fill, while preserving the existing two-order mode.
+- Refuse broker writes when an explicitly configured account binding cannot
+  be matched to the connected MT5 account.
+- Verify fills, channel-level updates, repeated add-ons and existing trailing
+  behavior with the fake broker.
+
 ### Independent signal workers
 
 - Classify each new entry once per worker instead of asking the same model

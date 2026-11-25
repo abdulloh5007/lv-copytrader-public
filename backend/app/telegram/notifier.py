@@ -1186,6 +1186,40 @@ class Notifier:
             )
             return False
 
+    async def send_performance_report(self, key: str, period: str, data: dict, attachment: bytes) -> None:
+        """Send one attachment to the configured private recipient per closed period."""
+        config = await self._load_config()
+        if (not config.enabled or not config.configured or not isinstance(config.chat_id, int)
+                or config.chat_id <= 0 or not config.allows(config.chat_id)):
+            return
+        labels = {
+            "ru": ("Неделя", "Месяц", "Дней со сделками", "в плюс", "в минус", "По известным сделкам"),
+            "uz": ("Hafta", "Oy", "Savdo kunlari", "foyda", "zarar", "Ma’lum natija"),
+            "en": ("Week", "Month", "Trading days", "positive", "negative", "Known net"),
+        }
+        week, month, active, wins, losses, net = labels.get(config.locale, labels["en"])
+        caption = (f'{week if period == "week" else month} · {data["start"]} — {data["end"]}\n'
+                   f'{active}: {data["active_days"]} · {wins}: {data["win_days"]} · {losses}: {data["loss_days"]}\n'
+                   f'{net}: {data["net"]:+.2f} {self._settings.PERFORMANCE_CURRENCY}')
+        async with session_scope() as session:
+            if await get_setting(session, key):
+                return
+            # Claim before the POST: a lost response must not duplicate a document.
+            await set_setting(session, key, "claimed")
+        try:
+            response = await self._http().post(
+                f"{TELEGRAM_API_BASE}/bot{config.token}/sendDocument",
+                data={"chat_id": str(config.chat_id), "caption": caption},
+                files={"document": (f'lvct-{period}-{data["start"]}.html', attachment, "text/html")},
+            )
+            sent = response.json().get("ok") is True
+        except (httpx.HTTPError, ValueError):
+            sent = False
+        async with session_scope() as session:
+            await set_setting(session, key, "sent" if sent else "unconfirmed")
+        await self._record("performance", caption, ok=sent,
+                           error=None if sent else "Telegram did not confirm report delivery")
+
     def fire(self, type: str, text: str, *, link: str | None = None) -> None:
         """Schedule a send in the background and return immediately — trades never wait on it."""
         try:

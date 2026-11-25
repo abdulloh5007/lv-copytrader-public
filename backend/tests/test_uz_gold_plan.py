@@ -24,6 +24,24 @@ def test_sell_stop_is_above_bid():
     assert result.targets == (4145, 4125)
 
 
+def test_single_order_uses_configured_lot_and_seven_dollar_fallback():
+    result = plan('60-65 sell zone TP 45 TP 25', total_lots=0.01,
+                  order_count=1, stop_distance=7)
+    assert result.action == 'open'
+    assert result.lots == (0.01,)
+    assert result.stop == result.entry + 7
+    assert result.targets == (4145, 4125)
+    assert plan('60-65 sell zone', total_lots=0.005, order_count=1,
+                stop_distance=7).reason == 'invalid_single_leg_volume'
+
+
+def test_single_order_keeps_a_valid_channel_stop():
+    result = plan('60-65 sell zone SL 4170 TP 45', total_lots=0.01,
+                  order_count=1, stop_distance=7)
+    assert result.action == 'open' and result.stop == 4170
+    assert result.channel_stop_supplied
+
+
 def test_quote_and_signal_must_be_current_and_inside_zone():
     text = '60-65 sell zone TP 45 TP 25'
     assert plan(text, tick_ts=990).reason == 'stale_quote'
@@ -536,7 +554,7 @@ async def test_market_now_fast_edits_during_ai_do_not_lose_or_change_the_signal(
         assert not broker.positions
 
 
-async def test_market_now_direction_edit_between_legs_stops_and_disarms(data_dir):
+async def test_market_now_direction_edit_stops_second_leg_without_disabling_trading(data_dir):
     from datetime import datetime, timezone
     from app.db import session_scope, set_setting
     from app.models import Message, Source
@@ -566,7 +584,8 @@ async def test_market_now_direction_edit_between_legs_stops_and_disarms(data_dir
         return response
     executor.rpc.order_send = edit_after_first
     result = await _drive(runtime, provider, row_id)
-    assert result['status'] == 'error' and calls == 1 and not await runtime.armed()
+    assert result['status'] == 'finished' and result['decision'] == 'acted'
+    assert calls == 1 and await runtime.armed()
     assert len(broker.positions) == 1 and next(iter(broker.positions.values()))['sl'] > 0
 
 
@@ -1145,6 +1164,61 @@ async def test_second_leg_failure_disarms_and_preserves_first_protected_position
     assert result['status']=='error' and calls==2
     assert len(broker.positions)==1 and next(iter(broker.positions.values()))['sl']>0
     assert not await runtime.armed()
+
+
+async def test_verified_slippage_stops_second_leg_without_disabling_trading(data_dir):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    send = broker.m_order_send
+    sends = 0
+    def slipped_send(request):
+        nonlocal sends
+        if request.get('action') == 1 and 'position' not in request:
+            sends += 1
+            broker.move('XAUUSDm', 2379.35)
+        return send(request)
+    broker.m_order_send = slipped_send
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    _, row_id = await _seed('81-78 buy zone', message_id=1705)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'acted', result
+    assert sends == 1 and len(broker.positions) == 1
+    position = next(iter(broker.positions.values()))
+    assert position['sl'] > 0 and position['tp'] > 0
+    assert await runtime.armed()
+
+
+async def test_deleted_signal_does_not_disable_or_block_a_separate_new_signal(data_dir):
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from app.telegram.ingest import Ingestor
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    source_id, deleted_id = await _seed('81-78 buy zone', message_id=1706)
+    ingestor = Ingestor(runtime)
+    await ingestor.handle_deleted([1706])
+    assert await ingestor._skip_voided(deleted_id) and await runtime.armed()
+    _, new_id = await _seed('81-78 buy zone', message_id=1707)
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    result = await _drive(runtime, provider, new_id)
+    assert result['decision'] == 'acted', result
+    assert len(broker.positions) == 2 and await runtime.armed()
 
 
 async def test_trade_record_failure_disarms_and_never_hides_open_positions(data_dir):
@@ -1728,3 +1802,308 @@ async def test_separate_gold_messages_use_free_workers_without_duplicate_ai_call
     finally:
         release_first.set()
         await asyncio.gather(first_task, *([second_task] if second_task else []), return_exceptions=True)
+async def test_expanded_zone_edit_is_same_signal_and_does_not_disable_trading(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from app.telegram.ingest import Ingestor
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3608)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2,
+                          'stop_distance': 15, 'entry_wait_seconds': 300, 'zone_tolerance': 2})
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    source_id, original_id = await _seed('Gold sell now 605-10', message_id=12157, posted_at=now)
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=12157, revision=2,
+                       edit_date=int(now.replace(tzinfo=timezone.utc).timestamp()), kind='text', status='pending',
+                       text='Gold sell now 3605-10\n\nTP 3585\nTP 3565', posted_at=now)
+        session.add(edit); await session.flush(); edit_id = edit.id
+    ingestor = Ingestor(runtime)
+    await ingestor._guard_corrected_channel_signal(source_id=source_id, chat_id=chat_id,
+                                                    message_id=12157, row_id=edit_id)
+    assert await runtime.armed()
+    result = await _drive(runtime, provider, original_id)
+    assert result['decision'] == 'acted', result
+    assert len(provider.calls) == 1 and len(broker.positions) == 2
+    assert sorted(p['tp'] for p in broker.positions.values()) == [3565, 3585]
+    await _drive(runtime, provider, edit_id)
+    assert len(broker.positions) == 2 and await runtime.armed()
+
+
+async def test_material_correction_is_reclassified_without_opening_stale_side(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from app.telegram.ingest import Ingestor
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3608)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2,
+                          'stop_distance': 15, 'entry_wait_seconds': 300, 'zone_tolerance': 2})
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    source_id, original_id = await _seed('Gold sell now 3605-10', message_id=12158, posted_at=now)
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=12158, revision=2,
+                       edit_date=int(now.replace(tzinfo=timezone.utc).timestamp()), kind='text', status='pending',
+                       text='Gold buy now 3605-10 TP 3620 TP 3630', posted_at=now)
+        session.add(edit); await session.flush(); edit_id = edit.id
+    ingestor = Ingestor(runtime)
+    await ingestor._guard_corrected_channel_signal(source_id=source_id, chat_id=chat_id,
+                                                    message_id=12158, row_id=edit_id)
+    assert await runtime.armed()
+    first = await _drive(runtime, provider, original_id)
+    assert first['decision'] == 'ignored' and not broker.positions
+    assert await runtime.armed()
+    corrected = await _drive(runtime, provider, edit_id)
+    assert corrected['decision'] == 'acted', corrected
+    assert len(provider.calls) == 2 and len(broker.positions) == 2
+    assert all(p['type'] == 0 for p in broker.positions.values())
+    assert sorted(p['tp'] for p in broker.positions.values()) == [3620, 3630]
+    tickets = set(broker.positions)
+    await _drive(runtime, provider, edit_id)
+    assert set(broker.positions) == tickets and len(provider.calls) == 2
+
+
+async def test_direction_correction_keeps_open_positions_and_never_opens_opposite(data_dir):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from app.telegram.ingest import Ingestor
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3608)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider('yes'); _install_provider(runtime, provider)
+    source_id, original_id = await _seed('Gold sell now 3605-10 TP 3585 TP 3565', message_id=12159, posted_at=now)
+    first = await _drive(runtime, provider, original_id)
+    assert first['decision'] == 'acted'
+    before = {ticket: (p['type'], p['sl'], p['tp']) for ticket, p in broker.positions.items()}
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=12159, revision=2,
+                       edit_date=int(now.replace(tzinfo=timezone.utc).timestamp()), kind='text', status='pending',
+                       text='Gold buy now 3605-10 TP 3620 TP 3630', posted_at=now)
+        session.add(edit); await session.flush(); edit_id = edit.id
+    ingestor = Ingestor(runtime)
+    await ingestor._guard_corrected_channel_signal(source_id=source_id, chat_id=chat_id,
+                                                    message_id=12159, row_id=edit_id)
+    await _drive(runtime, provider, edit_id)
+    assert await runtime.armed()
+    assert {ticket: (p['type'], p['sl'], p['tp']) for ticket, p in broker.positions.items()} == before
+
+
+@pytest.mark.parametrize('verdict,expected_alert', [('yes', True), ('no', False)])
+async def test_unrecognized_edited_post_gets_ai_review_but_never_opens(data_dir, verdict, expected_alert):
+    from datetime import datetime, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3608)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider(verdict); _install_provider(runtime, provider)
+    source_id, original_id = await _seed('Signal tez orada', message_id=13337, posted_at=now)
+    original = await _drive(runtime, provider, original_id)
+    assert original['decision'] == 'ignored' and not provider.calls and not broker.positions
+
+    async with session_scope() as session:
+        edit = Message(source_id=source_id, message_id=13337, revision=2,
+                       edit_date=int(now.replace(tzinfo=timezone.utc).timestamp()), kind='text',
+                       status='pending', text='Gold sell now 3605-10 TP 3585', posted_at=now)
+        session.add(edit); await session.flush(); edit_id = edit.id
+
+    class Notices:
+        def __init__(self): self.sent = []
+        def render_attention(self, **kwargs): return kwargs['detail']
+        def fire(self, *args, **kwargs): self.sent.append((args, kwargs))
+
+    notices = Notices(); runtime.notifier = notices
+    result = await _drive(runtime, provider, edit_id)
+    assert result['decision'] == 'ignored' and len(provider.calls) == 1
+    assert not broker.positions and bool(notices.sent) is expected_alert
+    if expected_alert:
+        assert 'no order was opened' in notices.sent[0][0][1]
+
+
+async def test_entry_referring_to_given_tp_uses_previous_channel_targets(data_dir):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3627)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider('yes 12157'); _install_provider(runtime, provider)
+    await _seed('Gold sell now 3605-10\nTP 3585\nTP 3565', message_id=12157,
+                posted_at=now - timedelta(minutes=40))
+    await _seed('15 dalivka minimal risk', message_id=12158, reply_to=12157,
+                posted_at=now - timedelta(minutes=20))
+    await _seed('TP gacha Oqizamiz', message_id=12159, reply_to=12157,
+                posted_at=now - timedelta(minutes=5))
+    text = ('Katta balansdagilar ushlasa boladi sabr qilib agar ko’tarsa 25-30da ham '
+            'sell zonelar aktiv Ulgurmaganlar kirsa boladi berilgan TP gacha')
+    _, row_id = await _seed(text, message_id=12160, posted_at=now)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'acted', result
+    assert sorted(p['tp'] for p in broker.positions.values()) == [3565, 3585]
+
+
+@pytest.mark.parametrize('prior,current,expected', [
+    ('Gold buy now 3605-10 TP 3640', '25-30 sell zone berilgan TP gacha', False),
+    ('Gold sell now 3605-10 TP 3585', '25-30 sell zone TP 3590', False),
+    ('Gold sell now 3605-10 TP 3585', '25-30 sell zone', False),
+    ('Gold sell now 3605-10 TP 3585', '25-30 sell zone berilgan TP gacha', True),
+])
+async def test_inherited_target_requires_explicit_reference_and_matching_side(data_dir, prior, current, expected):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    chat_id = -1005555555555
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    await _seed(prior, message_id=8100, posted_at=now - timedelta(minutes=10))
+    _, row_id = await _seed(current, message_id=8101, posted_at=now)
+    async with session_scope() as session:
+        row = await session.get(Message, row_id)
+        text = await executor._uz_gold_entry_text_with_context(row, quote=3627)
+    assert (text != current) is expected
+    if expected:
+        assert text.endswith('TP 3585')
+
+
+async def test_prior_target_edit_is_rechecked_before_broker_entry(data_dir):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Message, Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3627)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    prior_time = now - timedelta(minutes=10)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    provider = _ScriptedProvider('yes 8200'); _install_provider(runtime, provider)
+    source_id, _ = await _seed('Gold sell now 3605-10 TP 3585 TP 3565', message_id=8200, posted_at=prior_time)
+    _, row_id = await _seed('25-30 sell zone berilgan TP gacha', message_id=8201, posted_at=now)
+    original_prepare = executor._prepare
+    async def prepare_then_edit(*args, **kwargs):
+        result = await original_prepare(*args, **kwargs)
+        async with session_scope() as session:
+            session.add(Message(source_id=source_id, message_id=8200, revision=2,
+                                edit_date=int(now.replace(tzinfo=timezone.utc).timestamp()),
+                                kind='text', status='pending', posted_at=prior_time,
+                                text='Gold sell now 3605-10 TP 3580 TP 3560'))
+        return result
+    executor._prepare = prepare_then_edit
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'ignored', result
+    assert not broker.positions
+
+
+async def test_expired_previous_signal_is_not_used_as_target(data_dir):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope
+    from app.models import Message, Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _seed
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=-1005555555555, title='Gold', entity_type='channel', is_active=True))
+    await _seed('Gold sell now 3605-10 TP 3585', message_id=8300, posted_at=now - timedelta(hours=25))
+    text = '25-30 sell zone berilgan TP gacha'
+    _, row_id = await _seed(text, message_id=8301, posted_at=now)
+    async with session_scope() as session:
+        row = await session.get(Message, row_id)
+        assert await executor._uz_gold_entry_text_with_context(row, quote=3627) == text
+
+
+@pytest.mark.parametrize('post,response,prior,expected_targets', [
+    ('25-30 sell zonelar aktiv, oldingi maqsadga qarab yuramiz', 'yes 8400',
+     'Gold sell now 3605-10 TP 3585 TP 3565', [3565, 3585]),
+    ('25-30 sell, держим к прежним целям', 'yes 8400',
+     'Gold sell now 3605-10 TP 3585 TP 3565', [3565, 3585]),
+    ('25-30 sell, continue toward the earlier targets', 'yes 8400',
+     'Gold sell now 3605-10 TP 3585 TP 3565', [3565, 3585]),
+    ('25-30 sell, новая самостоятельная сделка', 'yes none',
+     'Gold sell now 3605-10 TP 3585 TP 3565', None),
+    ('25-30 sell, не используем старые цели до TP', 'yes none',
+     'Gold sell now 3605-10 TP 3585 TP 3565', None),
+    ('25-30 sell, keep prior targets', 'yes 9999',
+     'Gold sell now 3605-10 TP 3585 TP 3565', None),
+    ('25-30 sell, keep prior targets', 'yes 8400',
+     'Gold buy now 3605-10 TP 3645 TP 3665', None),
+])
+async def test_ai_context_links_only_verified_same_side_channel_targets(data_dir, post, response, prior, expected_targets):
+    from datetime import datetime, timedelta, timezone
+    from app.db import session_scope, set_setting
+    from app.models import Source
+    from tests.test_executor import _build
+    from tests.test_fast_entry import _drive, _install_provider, _ScriptedProvider, _seed
+
+    executor, broker, runtime = await _build(data_dir, armed=True)
+    broker.move('XAUUSDm', 3627)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    chat_id = -1005555555555
+    async with session_scope() as session:
+        session.add(Source(kind='telegram', chat_id=chat_id, title='Gold', entity_type='channel', is_active=True))
+        await set_setting(session, 'ingest.research_only_chat_id', chat_id)
+        await set_setting(session, 'trading.uz_gold_policy', {'enabled': True, 'total_lots': .2, 'stop_distance': 15})
+    await _seed(prior, message_id=8400, posted_at=now - timedelta(minutes=15))
+    await _seed('price moved, keep watching', message_id=8401, reply_to=8400,
+                posted_at=now - timedelta(minutes=5))
+    _, row_id = await _seed(post, message_id=8402, posted_at=now)
+    provider = _ScriptedProvider(response); _install_provider(runtime, provider)
+    result = await _drive(runtime, provider, row_id)
+    assert result['decision'] == 'acted', result
+    assert len(provider.calls) == 1 and 'RECENT CHANNEL' not in provider.calls[0]['system']
+    assert 'previously given take-profit targets' in provider.calls[0]['system']
+    actual = sorted(p['tp'] for p in broker.positions.values())
+    if expected_targets is not None:
+        assert actual == expected_targets
+    else:
+        assert actual[0] == 0 and actual[1] != 3585

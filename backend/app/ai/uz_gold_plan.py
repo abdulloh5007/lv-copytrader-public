@@ -29,6 +29,7 @@ def plan_gold_entry(
     signal_ts: float, total_lots: float, volume_min: float, volume_max: float,
     volume_step: float, margin_mode: str, stop_distance: float = 15.0,
     clock_offset: float = 0.0, edited: bool = False, catchup: bool = False,
+    order_count: int = 2, max_targets: int | None = 2,
     max_signal_age: float = 60.0, zone_tolerance: float = 0.0,
 ) -> GoldEntryPlan:
     """Build a two-target plan only; all broker writes require separate gates.
@@ -52,7 +53,9 @@ def plan_gold_entry(
         return GoldEntryPlan('reject', reason='stale_quote')
     if edited or catchup or not 0 <= now_ts - signal_ts <= max_signal_age:
         return GoldEntryPlan('reject', reason='edited_or_stale_signal')
-    if margin_mode.lower() != 'hedging':
+    if order_count not in (1, 2) or isinstance(order_count, bool):
+        return GoldEntryPlan('reject', reason='invalid_order_count')
+    if order_count == 2 and margin_mode.lower() != 'hedging':
         return GoldEntryPlan('reject', reason='two_positions_require_hedging')
     post = parse_uz_gold_post(text, quote=(bid + ask) / 2, fallback_levels=True)
     if post.kind in ('ignored', 'management'):
@@ -60,7 +63,7 @@ def plan_gold_entry(
     if post.kind != 'entry' or post.side is None or (post.zone is None and post.action != 'market_now'):
         return GoldEntryPlan('reject', reason=post.reason or 'invalid_signal')
     ignored_levels = list(post.ignored_levels)
-    targets = post.targets[:2]
+    targets = post.targets[:max_targets]
     entry = ask if post.side == 'buy' else bid
     # Do not enter (even with tolerance) when the first target is already reached.
     first_target = targets[0] if targets else post.verified_first_target
@@ -74,11 +77,11 @@ def plan_gold_entry(
                                              (total_lots, volume_min, volume_max, volume_step))
         if total <= 0 or minimum <= 0 or maximum < minimum or step <= 0:
             raise ValueError('invalid volume')
-        half = total / 2
-        if half < minimum or half > maximum or half % step != 0:
-            raise ValueError('two equal legal legs required')
+        each = total / order_count
+        if each < minimum or each > maximum or each % step != 0:
+            raise ValueError('equal legal legs required')
     except (InvalidOperation, ValueError):
-        return GoldEntryPlan('reject', reason='invalid_two_leg_volume')
+        return GoldEntryPlan('reject', reason='invalid_two_leg_volume' if order_count == 2 else 'invalid_single_leg_volume')
     distance = post.sl_pips * 0.1 if post.sl_pips is not None else stop_distance
     stop = (post.sl if post.sl is not None else
             entry - distance if post.side == 'buy' else entry + distance)
@@ -90,10 +93,10 @@ def plan_gold_entry(
             return GoldEntryPlan('reject', reason='invalid_stop')
         ignored_levels.append('invalid_stop')
         return GoldEntryPlan('open', side=post.side, zone=post.zone, entry=entry, stop=stop,
-                             targets=targets, lots=(float(half), float(half)),
+                             targets=targets, lots=(float(each),) * order_count,
                              ignored_levels=tuple(ignored_levels))
     return GoldEntryPlan('open', side=post.side, zone=post.zone, entry=entry, stop=stop,
-                         targets=targets, lots=(float(half), float(half)),
+                         targets=targets, lots=(float(each),) * order_count,
                          channel_stop_supplied=post.sl is not None or post.sl_pips is not None,
                          channel_stop_pips=post.sl_pips, ignored_levels=tuple(ignored_levels))
 

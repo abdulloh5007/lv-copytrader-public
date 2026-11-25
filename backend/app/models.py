@@ -52,6 +52,33 @@ class AutoReactionReceipt(Base):
     __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uq_auto_reaction_post"),)
 
 
+class DailySimulation(Base):
+    """A protected gold position tracked on quotes after the live daily target."""
+
+    __tablename__ = "daily_simulations"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
+    signal_ref: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    volume: Mapped[float] = mapped_column(nullable=False)
+    entry: Mapped[float] = mapped_column(nullable=False)
+    sl: Mapped[float] = mapped_column(nullable=False)
+    tp: Mapped[float] = mapped_column(nullable=False)
+    gain_per_price: Mapped[float] = mapped_column(nullable=False)
+    loss_per_price: Mapped[float] = mapped_column(nullable=False)
+    opened_at: Mapped[float] = mapped_column(nullable=False)
+    searched_until: Mapped[float] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(12), index=True, default="open", nullable=False)
+    closed_at: Mapped[float | None] = mapped_column(nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(nullable=True)
+    cause: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    pnl: Mapped[float | None] = mapped_column(nullable=True)
+    changes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
 class GoldAddonClaim(Base):
     """Durable one-shot claim made before a gold add-on reaches the broker."""
 

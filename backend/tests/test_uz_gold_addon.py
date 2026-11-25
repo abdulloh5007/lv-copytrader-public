@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.ai.uz_gold_addon import addon_price, is_addon_post
+from app.ai.uz_gold_addon import addon_channel_stop, addon_price, is_addon_post
 
 
 def test_only_unambiguous_addon_instructions_resolve_against_original_entry():
@@ -13,10 +13,46 @@ def test_only_unambiguous_addon_instructions_resolve_against_original_entry():
     for text in ('77 dalivka?', 'BTC 77 dalivka', '77 dalivka sell', 'dalivka', '77 dalivka minimal risk or buy'):
         assert not is_addon_post(text)
     assert addon_price('50 dalivka', reference=3900) is None
+    assert is_addon_post('75dalivka 78 Sl')
+    assert addon_price('75dalivka 78 Sl', reference=3674.7) == 3675
+    assert addon_channel_stop('75dalivka 78 Sl', reference=3675) == 3678
+    assert addon_channel_stop('75 dalivka SL 3678', reference=3675) == 3678
+    assert addon_channel_stop('75 dalivka', reference=3675) is None
+
+
+@pytest.mark.parametrize('text,side,expected_stop', [
+    ('80dalivka 77 Sl', 'buy', 2377),
+    ('80dalivka 83 Sl', 'sell', 2383),
+])
+async def test_compact_addon_uses_its_channel_stop(data_dir, text, side, expected_stop):
+    from app.db import session_scope
+    from app.models import Message
+    first = '81-78 buy zone TP 84 TP 87' if side == 'buy' else '81-78 sell zone TP 75 TP 72'
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(data_dir, first_text=first)
+    async with session_scope() as session:
+        row = await session.get(Message, ctx.message_row_id)
+        row.text = text
+    result = await executor.open_uz_gold_addon(ctx)
+    assert result['ok'], result
+    addon = broker.positions[result['tickets'][0]]
+    assert addon['sl'] == expected_stop
+
+
+async def test_compact_addon_rejects_stop_on_wrong_side(data_dir):
+    from app.db import session_scope
+    from app.models import Message
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(
+        data_dir, first_text='81-78 sell zone TP 75 TP 72')
+    existing = set(broker.positions)
+    async with session_scope() as session:
+        row = await session.get(Message, ctx.message_row_id)
+        row.text = '80dalivka 77 Sl'
+    result = await executor.open_uz_gold_addon(ctx)
+    assert not result['ok'] and set(broker.positions) == existing
 
 
 async def seed_pair_and_addon(data_dir, *, enabled=True, price='80', reply=True,
-                              first_text='81-78 buy zone TP 84 TP 87'):
+                              first_text='81-78 buy zone TP 84 TP 87', small=False):
     from app.db import session_scope, set_setting
     from app.models import Message, Source
     from app.trading.executor import RunContext
@@ -29,7 +65,9 @@ async def seed_pair_and_addon(data_dir, *, enabled=True, price='80', reply=True,
         session.add(source); await session.flush()
         await set_setting(session, 'ingest.research_only_chat_id', chat_id)
         await set_setting(session, 'trading.uz_gold_policy', {
-            'enabled': True, 'total_lots': .2, 'stop_distance': 15, 'addon_enabled': enabled,
+            'enabled': True, 'total_lots': .01 if small else .2,
+            'stop_distance': 7 if small else 15, 'addon_enabled': enabled,
+            'mode': 'small_account' if small else 'classic',
             'zone_tolerance': 2, 'entry_wait_seconds': 300,
         })
         first = Message(source_id=source.id, message_id=1001, kind='text', status='processed',
@@ -47,6 +85,91 @@ async def seed_pair_and_addon(data_dir, *, enabled=True, price='80', reply=True,
         ctx = RunContext(run_id='addon', source_id=source.id, message_row_id=post.id,
                          signal_ref=post.signal_ref, origin='uz_gold_addon')
     return executor, broker, runtime, ctx, now
+
+
+async def test_small_account_opens_one_and_addon_once_per_signal(data_dir):
+    from dataclasses import replace
+    from app.db import session_scope
+    from app.models import Message
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(data_dir, price='82', small=True)
+    assert len(broker.positions) == 1
+    first = next(iter(broker.positions.values()))
+    assert first['volume'] == .01 and first['tp'] == 2384
+    assert abs(first['price_open'] - first['sl'] - 7) < .01
+    broker.move('XAUUSDm', 2382)
+    result = await executor.open_uz_gold_addon(ctx)
+    assert result['ok'], result
+    addon = broker.positions[result['tickets'][0]]
+    assert addon['volume'] == .01 and addon['tp'] == 2384
+    assert abs(addon['price_open'] - addon['sl'] - 7) < .01
+    async with session_scope() as session:
+        another = Message(source_id=ctx.source_id, message_id=1003, kind='text', status='pending',
+                          text='82 dalivka minimal risk', posted_at=now, reply_to_message_id=1001)
+        session.add(another); await session.flush()
+        second_ctx = replace(ctx, run_id='another', message_row_id=another.id, signal_ref=another.signal_ref)
+    assert not (await executor.open_uz_gold_addon(second_ctx))['ok']
+    assert len(broker.positions) == 2
+
+
+async def test_small_account_fallback_target_is_one_to_one(data_dir):
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(
+        data_dir, price='82', first_text='81-78 buy zone', small=True)
+    assert len(broker.positions) == 1
+    first = next(iter(broker.positions.values()))
+    assert first['volume'] == .01
+    assert abs(first['price_open'] - first['sl'] - 7) < .01
+    assert abs(first['tp'] - first['price_open'] - 7) < .01
+
+
+async def test_small_account_fallback_stop_and_target_follow_actual_fill(data_dir, monkeypatch):
+    from tests.fake_mt5 import FakeMt5
+    send = FakeMt5.m_order_send
+    def slipped(self, request):
+        if request.get('action') == 1 and 'position' not in request:
+            self.move('XAUUSDm', 2380.2)
+        return send(self, request)
+    monkeypatch.setattr(FakeMt5, 'm_order_send', slipped)
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(
+        data_dir, price='82', first_text='81-78 buy zone', small=True)
+    first = next(iter(broker.positions.values()))
+    assert abs(first['price_open'] - first['sl'] - 7) < .01
+    assert abs(first['tp'] - first['price_open'] - 7) < .01
+
+
+async def test_small_account_channel_edit_updates_only_primary_order(data_dir):
+    from dataclasses import replace
+    from app.db import session_scope
+    from app.models import Message
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(
+        data_dir, price='82', first_text='81-78 buy zone', small=True)
+    broker.move('XAUUSDm', 2382)
+    opened = await executor.open_uz_gold_addon(ctx)
+    assert opened['ok'], opened
+    addon_before = dict(broker.positions[opened['tickets'][0]])
+    async with session_scope() as session:
+        edit = Message(source_id=ctx.source_id, message_id=1001, edit_date=1, revision=2,
+                       kind='text', status='pending', text='81-78 buy zone TP 86 TP 88', posted_at=now)
+        session.add(edit); await session.flush()
+        update = replace(ctx, run_id='update', message_row_id=edit.id, signal_ref=edit.signal_ref, origin='agent')
+    result = await executor.update_uz_gold_signal(update)
+    assert result['ok'], result
+    primary = next(p for ticket, p in broker.positions.items() if ticket != opened['tickets'][0])
+    assert primary['tp'] == 2386
+    addon_after = broker.positions[opened['tickets'][0]]
+    assert addon_after['tp'] == addon_before['tp'] and addon_after['sl'] == addon_before['sl']
+
+
+async def test_account_binding_refuses_all_broker_writes_on_account_mismatch(data_dir, monkeypatch):
+    from app.db import session_scope, set_setting
+    executor, broker, runtime, ctx, now = await seed_pair_and_addon(data_dir, small=True)
+    sent = []
+    monkeypatch.setattr(broker, 'm_order_send', lambda request: sent.append(request))
+    async with session_scope() as session:
+        await set_setting(session, 'trading.account_binding', {'login': 123456, 'server': 'Headway-Real'})
+    result = await executor.send_order({'action': 1, 'symbol': 'XAUUSDm', 'type': 0,
+                                        'volume': .01, 'price': 2380}, ctx=ctx, expect_pending=False)
+    assert not result.ok and result.retcode_name == 'ACCOUNT_NOT_VERIFIED'
+    assert sent == []
 
 
 async def test_addon_opens_once_with_own_stop_first_tp_and_fixed_volume(data_dir):

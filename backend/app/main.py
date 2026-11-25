@@ -31,6 +31,7 @@ import html
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Final
 
@@ -64,8 +65,11 @@ from app.telegram.client import TelegramService
 from app.telegram.ingest import Ingestor
 from app.telegram.notifier import Notifier
 from app.trading.constants import margin_mode_name
+from app.trading.daily_simulation import summary as daily_simulation_summary, watch as watch_daily_simulation
+from app.trading.daily_target import monitor_daily_target
 from app.trading.executor import Executor
 from app.trading.guards import SlWatchdog
+from app.trading.performance import TZ, run_performance
 from app.trading.quote_cache import run_quote_cache
 from app.trading.reconcile import reconcile
 from app.trading.rpc import Mt5Rpc
@@ -653,6 +657,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _warn(runtime, "startup_quote_cache_failed", exc)
 
         app.state.public_demo.start()
+        if runtime is not None and settings.PERFORMANCE_START_DATE and (
+            settings.PERFORMANCE_PUBLIC or settings.PERFORMANCE_TELEGRAM
+        ):
+            runtime.tasks["performance"] = asyncio.create_task(run_performance(runtime, app.state))
+        if runtime is not None and settings.DAILY_PROFIT_TARGET_PERCENT:
+            runtime.tasks["daily_target"] = asyncio.create_task(monitor_daily_target(runtime))
+        if runtime is not None and settings.DAILY_PROFIT_DYNAMIC_GOLD_SIZE:
+            runtime.tasks["daily_simulation"] = asyncio.create_task(watch_daily_simulation(runtime))
         log.info("startup_complete seconds=%.2f", time.time() - boot)
         yield
     finally:
@@ -989,6 +1001,21 @@ def create_app() -> FastAPI:
     _include_router(app, auth_api, "auth")
     _include_router(app, waitlist_api, "waitlist")
     _include_router(app, demo_api, "demo")
+
+    @app.get("/api/performance", tags=["performance"])
+    async def performance_snapshot(request: Request) -> JSONResponse:
+        if not settings.PERFORMANCE_PUBLIC or not settings.PERFORMANCE_START_DATE:
+            return _error_response(404, "not_found", "Performance has not been shared")
+        snapshot = getattr(request.app.state, "performance_snapshot", None)
+        if snapshot is None:
+            return _error_response(503, "unavailable", "Performance is loading")
+        return JSONResponse(snapshot)
+
+    @app.get("/api/performance/simulation", tags=["performance"])
+    async def performance_simulation(day: date | None = None) -> JSONResponse:
+        selected = day or datetime.now(TZ).date()
+        return JSONResponse(await daily_simulation_summary(selected.isoformat()), headers={"Cache-Control": "no-store"})
+
     _include_router(app, settings_api, "settings")
     _include_router(app, telegram_api, "telegram")
     _include_router(app, provider_api, "provider")

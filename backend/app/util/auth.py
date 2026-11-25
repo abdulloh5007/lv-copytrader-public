@@ -433,7 +433,8 @@ class AuthMiddleware:
         if scope["type"] == "http" and (is_public_path(_path(scope)) or (
             _path(scope) in {"/api/waitlist", "/api/demo/presence"} and scope.get("method") == "POST"
         ) or (
-            _path(scope) == "/api/demo/snapshot" and scope.get("method") in {"GET", "HEAD"}
+            _path(scope) in {"/api/demo/snapshot", "/api/performance", "/performance", "/performance/"}
+            and scope.get("method") in {"GET", "HEAD"}
         )):
             await self.app(scope, receive, send)
             return

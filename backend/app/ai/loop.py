@@ -86,7 +86,7 @@ from app.config import MAX_TOKENS, MAX_TOOL_ITERATIONS
 from app.config import settings as _settings
 from app.db import get_setting, get_settings_map, session_scope
 from app.errors import ProviderError, SignalPilotError
-from app.models import Message, Run, RunStep, Source, SystemState, utcnow
+from app.models import Message, Run, RunStep, Source, SystemState, Trade, utcnow
 from app import operator_settings
 from app.trading import guards
 from app.trading.entry_gate import EntryLawState, entry_law_blocks_finish, note_entry_tool
@@ -354,6 +354,8 @@ class _AgentRun:
         self.triage_text: str = ""
         self.triage_image_count: int = 0
         self.triage_verdict: str | None = None
+        self.gold_target_source_message_id: int | None = None
+        self.gold_target_context_checked = False
         #: Set once the fast path has called the broker. None when it did not run.
         self.fast_entry: dict[str, Any] | None = None
         #: Set when the Soft #SOFT template path handled (or refused) the post.
@@ -1410,17 +1412,60 @@ class _AgentRun:
                 log.warning("triage_brief_unavailable error=%s", exc)
                 channel_brief = ""
 
+        recent_posts: list[dict[str, Any]] = []
+        if self.gold_entry_post is not None and self.message_row_id:
+            from datetime import timedelta
+            from app.ai.uz_gold_zone import target_count
+            if not target_count(self.gold_entry_post):
+                async with session_scope() as session:
+                    current = await session.get(Message, self.message_row_id)
+                    if current is not None and current.posted_at is not None and current.reply_to_message_id is None:
+                        rows = (await session.execute(select(Message).where(
+                            Message.source_id == current.source_id,
+                            Message.message_id < current.message_id, Message.kind == "text",
+                            Message.deleted_at.is_(None),
+                            Message.posted_at >= current.posted_at - timedelta(hours=24),
+                            Message.posted_at <= current.posted_at,
+                        ).order_by(Message.message_id.desc(), Message.revision.desc(), Message.id.desc())
+                             .limit(150))).scalars().all()
+                        seen: set[int] = set()
+                        for item in rows:
+                            if item.message_id in seen:
+                                continue
+                            seen.add(item.message_id)
+                            recent_posts.append({"id": item.message_id,
+                                                 "reply_to": item.reply_to_message_id,
+                                                 "text": str(item.text or "")[:800]})
+                            if len(recent_posts) >= 30:
+                                break
+                        recent_posts.reverse()
+        if self.gold_entry_post is not None and getattr(self.settings, "DAILY_PROFIT_DYNAMIC_GOLD_SIZE", False):
+            from app.trading.daily_target import STATE_KEY
+            from app.trading.performance import TZ
+
+            async with session_scope() as session:
+                day = await get_setting(session, STATE_KEY, {})
+            if (isinstance(day, dict) and day.get("reached")
+                    and day.get("date") == datetime.now(TZ).date().isoformat()):
+                channel_brief += ("\nSession status: the live daily goal is locked. Classify this post on its merits "
+                                  "as usual. Confirmed entries are recorded for quote-based simulation only.")
         started = time.monotonic()
         # A worker owns one message and makes one classification call. The
         # other ingest workers remain free to process unrelated messages.
-        verdict = await classify_signal(
+        verdict_result = await classify_signal(
             self.provider,
             model=self.model or "",
             capabilities=self.caps,
             text=self.triage_text,
             image_count=self.triage_image_count,
             channel_brief=channel_brief,
+            **({"context_posts": recent_posts, "return_relation": True} if recent_posts else {}),
         )
+        if isinstance(verdict_result, tuple):
+            verdict, self.gold_target_source_message_id = verdict_result
+            self.gold_target_context_checked = True
+        else:
+            verdict = verdict_result
         votes = [verdict]  # Preserve the existing run-step schema for the UI.
         latency_ms = int((time.monotonic() - started) * 1000)
         self.provider_latency_ms += latency_ms
@@ -1436,6 +1481,7 @@ class _AgentRun:
                 "tools": False,
                 "latency_ms": latency_ms,
                 "channel_brief": bool(channel_brief.strip()),
+                "target_source_message_id": self.gold_target_source_message_id,
             },
             ok=True,
         )
@@ -1713,7 +1759,8 @@ class _AgentRun:
 
     async def _run_uz_gold_signal(self, row: Message | None) -> dict[str, Any]:
         """Run the enabled gold policy with scoped deterministic broker operations."""
-        from app.ai.uz_gold_zone import channel_stop, entry_identity, parse_uz_gold_post, target_count
+        from app.ai.uz_gold_zone import (CORRECTION_RETRY_REASONS, channel_stop, entry_identity,
+                                         parse_uz_gold_post, target_count)
         if row is None:
             return await self._finalize(STATUS_ERROR, error="gold channel message missing")
         text = str(row.text or "")
@@ -1731,7 +1778,9 @@ class _AgentRun:
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         identity = entry_identity(text)
         first_observed_edit = False
-        if row.edit_date and not row.reply_to_message_id and not row.catchup and identity is not None:
+        corrected_entry = False
+        review_unverified_edit = False
+        if row.edit_date and not row.reply_to_message_id and not row.catchup:
             # A first observed edit may be the first delivery of a new signal.
             # The executor independently checks history, age and broker exposure.
             async with session_scope() as session:
@@ -1740,14 +1789,63 @@ class _AgentRun:
                     Message.id < row.id
                 ).limit(1))).scalar_one_or_none()
                 live_trades = await guards.live_chain_trades(session, row.signal_ref)
-            first_observed_edit = earlier_id is None and not live_trades
+                previous_run = (await session.execute(select(Run).join(
+                    Message, Run.message_row_id == Message.id
+                ).where(Message.source_id == row.source_id, Message.message_id == row.message_id,
+                        Message.id < row.id, Run.kind == "signal", Run.id != self.run_id)
+                         .order_by(Run.started_at.desc()).limit(1))).scalars().first()
+                refs = await guards.chain_signal_refs(session, row.signal_ref)
+                recorded_trade = (await session.execute(select(Trade.id).where(
+                    Trade.signal_ref.in_(refs)).limit(1))).scalar_one_or_none() if refs else None
+            first_observed_edit = identity is not None and earlier_id is None and not live_trades
+            corrected_entry = bool(earlier_id is not None and not live_trades and previous_run is not None
+                                   and identity is not None
+                                   and previous_run.status == "finished" and previous_run.decision == "ignored"
+                                   and str(previous_run.summary or "") in CORRECTION_RETRY_REASONS)
+            # A generic ignored result does not establish that the earlier post was
+            # a signal. Reclassify the current edit for operator visibility only;
+            # this path must never grant entry permission or call broker tools.
+            now_ts = time.time()
+            posted = row.posted_at
+            if posted is not None and posted.tzinfo is None:
+                posted = posted.replace(tzinfo=timezone.utc)
+            review_unverified_edit = bool(
+                earlier_id is not None and not live_trades and recorded_trade is None
+                and previous_run is not None and previous_run.status == "finished"
+                and previous_run.decision == "ignored"
+                and previous_run.summary == "No new verified entry."
+                and posted is not None and 0 <= now_ts - posted.timestamp() <= 300
+                and 0 <= now_ts - int(row.edit_date) <= 60
+            )
             if first_observed_edit:
                 from dataclasses import replace
                 ctx = replace(ctx, first_observed_edit=True)
-        is_targets = not first_observed_edit and bool(row.edit_date or row.reply_to_message_id) and target_count(text) >= 1
+            elif corrected_entry:
+                from dataclasses import replace
+                ctx = replace(ctx, corrected_entry=True)
+        if review_unverified_edit:
+            refusal = await self._resolve_provider()
+            if refusal is None:
+                refusal = await self._build_messages(row)
+            if refusal is not None:
+                verdict = "unavailable"
+            else:
+                skipped = await self._triage_gate()
+                if skipped is not None:
+                    return skipped
+                verdict = self.triage_verdict or "uncertain"
+            detail = ("Edited channel post may contain a signal; no order was opened. "
+                      f"AI check: {verdict}. Review the current post and positions.")
+            self._emit(events.SYSTEM_WARNING, reason="gold_unverified_edit_review", message=detail)
+            notifier = getattr(self.runtime, "notifier", None)
+            if notifier is not None:
+                notice = notifier.render_attention(subject="edited post needs review", detail=detail)
+                notifier.fire("attention", notice or detail, link=row.permalink)
+            return await self._finalize(STATUS_FINISHED, decision="ignored", summary=detail)
+        is_targets = not (first_observed_edit or corrected_entry) and bool(row.edit_date or row.reply_to_message_id) and target_count(text) >= 1
         is_stop = False
         invalid_stop = False
-        if not first_observed_edit and (row.edit_date or row.reply_to_message_id):
+        if not (first_observed_edit or corrected_entry) and (row.edit_date or row.reply_to_message_id):
             try:
                 stop_price, stop_pips = channel_stop(text)
             except ValueError:
@@ -1769,7 +1867,7 @@ class _AgentRun:
             reason += " Check the channel and positions; the trading switch was not changed."
             self._emit(events.SYSTEM_WARNING, reason="gold_channel_update_failed", message=reason)
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
-        if (row.edit_date and not first_observed_edit) or row.reply_to_message_id or identity is None:
+        if (row.edit_date and not (first_observed_edit or corrected_entry)) or row.reply_to_message_id or identity is None:
             return await self._finalize(STATUS_FINISHED, decision="ignored", summary="No new verified entry.")
         self.gold_entry_post = text
         self.gold_entry_link = row.permalink
@@ -1784,6 +1882,10 @@ class _AgentRun:
             return skipped
         if self.triage_verdict != "yes":
             return await self._finalize(STATUS_ERROR, error="AI classification was uncertain or unavailable; no entry was sent")
+        if self.gold_target_context_checked:
+            from dataclasses import replace
+            ctx = replace(ctx, semantic_target_message_id=self.gold_target_source_message_id,
+                          semantic_target_context_checked=True)
         # Waiting is opt-in and ephemeral: process restarts never replay a signal.
         # Only one run can occupy a waiting slot; broker locks are acquired only
         # for individual attempts, never during the sleep between quotes.
@@ -1823,6 +1925,8 @@ class _AgentRun:
             reason = "Order outcome or protection could not be verified; automatic trading is disabled. Check positions."
             return await self._finalize(STATUS_ERROR, error=reason, summary=reason)
         if result.get("ok") and not result.get("failures") and not result.get("partial_fill") and not result.get("safety_failures"):
+            return await self._finalize(STATUS_FINISHED, decision="acted", summary=str(result.get("message") or ""))
+        if result.get("ok") and result.get("failures") and not result.get("partial_fill"):
             return await self._finalize(STATUS_FINISHED, decision="acted", summary=str(result.get("message") or ""))
         if result.get("ok") or result.get("partial_fill"):
             await self.runtime.set_armed(False)

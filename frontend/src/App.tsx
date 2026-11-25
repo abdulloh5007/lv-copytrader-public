@@ -24,6 +24,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Waitlist = lazy(() => import('./pages/Waitlist'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Demo = lazy(() => import('./pages/Demo'));
+const Performance = lazy(() => import('./pages/Performance'));
 
 export type { Theme } from './theme';
 
@@ -219,6 +220,7 @@ export function App(): ReactElement {
           <Route path="/waitlist" element={<Waitlist />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/demo" element={<Demo />} />
+          <Route path="/performance" element={<Performance />} />
           <Route path="*" element={<ProtectedApp />} />
         </Routes>
       </Suspense>

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any, Final
 
@@ -170,6 +171,13 @@ class Settings(BaseSettings):
 
     # --- sizing and margin -------------------------------------------------------------
     DEFAULT_RISK_PERCENT: float = Field(default=1.0, gt=0.0)
+    PERFORMANCE_START_DATE: date | None = None
+    PERFORMANCE_CURRENCY: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    PERFORMANCE_PUBLIC: bool = False
+    PERFORMANCE_TELEGRAM: bool = False
+    DAILY_PROFIT_TARGET_PERCENT: float = Field(default=0, ge=0, le=100)
+    DAILY_PROFIT_TARGET_START_DATE: date | None = None
+    DAILY_PROFIT_DYNAMIC_GOLD_SIZE: bool = False
     MARGIN_HEADROOM: float = Field(default=0.8, gt=0.0, le=1.0)
     FORCE_MARGIN_MODE: str | None = None
     MAX_TP_SPLITS: int = Field(default=3, ge=1)

@@ -21,6 +21,26 @@ _REENTRY_ANNOUNCEMENT = re.compile(
     re.I,
 )
 _OTHER_SYMBOL = re.compile(r'\b(?:BTC|BTCUSD|ETH|ETHUSD|XAG|XAGUSD|EURUSD|GBPUSD)\b', re.I)
+_BE_MENTION = re.compile(r'\bb\s*/\s*u\b|bezubit|bezub|безубыт', re.I)
+_BE_CLOSE = re.compile(
+    r'^\s*(?:(?:b\s*/\s*u|bezubit\w*|bezub\w*|безубыт\w*)\s*(?:da|ga)?\s+)?'
+    r'(?:yoping|yopinglar|закройте|закрывайте|close|exit)\b', re.I,
+)
+_BE_NONCOMMAND = re.compile(r'\?|\b(?:not|never|dont|don.t|if|не|если|deb)\b', re.I)
+_BE_MOVE = re.compile(r'\b(?:obqoying|obqo[yʻ’\x27]ing|qoying|qo[yʻ’\x27]ing|'
+                      r'перенесите|поставьте|move|set)\b', re.I)
+_PREVIOUS_TP_REFERENCE = re.compile(
+    r'\b(?:(?:berilgan|oldingi|avvalgi)\s+)?tp\s*gacha\b|'
+    r'\bдо\s+(?:(?:указанного|предыдущего|данного)\s+)?(?:тп|tp)\b', re.I,
+)
+CORRECTION_RETRY_REASONS = frozenset({
+    'signal follow-up changed more than targets',
+    'signal follow-up is not consistent with the original',
+    'signal entry zone changed',
+    'signal changed before entry and could not be verified',
+    'gold channel side or split no longer matches the verified signal',
+    'gold channel entry refused: targets_changed_before_order',
+})
 _LEVEL = (r'(?:TP\s*[:=]?\s*\d{1,6}(?:\.\d+)?|'
           r'SL\s*[:=]?\s*(?:\d+(?:\.\d+)?\s*PIPS?|\d{3,6}(?:\.\d+)?))')
 _EXPLICIT_REENTRY = re.compile(
@@ -100,6 +120,11 @@ def target_count(text: str) -> int:
     return len(_TARGET.findall(text or ""))
 
 
+def references_previous_targets(text: str) -> bool:
+    """Recognize an explicit reference, without inventing a target price."""
+    return bool(_PREVIOUS_TP_REFERENCE.search(text or ''))
+
+
 def channel_stop(text: str) -> tuple[float | None, float | None]:
     """Read an explicit stop price or pip distance, rejecting ambiguous levels."""
     pip_matches = list(_SL_PIPS.finditer(text or ''))
@@ -132,7 +157,7 @@ def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
         zone = _RANGE.search(reentry.group("zone"))
         assert zone is not None
         return ("buy" if reentry.group("side").lower() == "buy" else "sell", zone.group(1), zone.group(2))
-    if re.search(r'\bb\s*/\s*u\b|bezubit|bezub|\byop|\bre\s*-?\s*entry\b|\brentery\b', text, re.I):
+    if _BE_MENTION.search(text) or re.search(r'\byop|\bre\s*-?\s*entry\b|\brentery\b', text, re.I):
         return None
     market = _MARKET_NOW.fullmatch(text)
     if market:
@@ -150,6 +175,32 @@ def entry_identity(text: str) -> tuple[str, str | None, str | None] | None:
     return side, zones[0].group(1), zones[0].group(2)
 
 
+def equivalent_entry_revision(original: str, revised: str) -> bool:
+    """Prove a zone was expanded without changing its meaning or other instructions.
+
+    An explicit four-digit price anchors the comparison; without one we refuse
+    to infer the missing hundreds from a potentially stale market quote.
+    TP/SL additions are allowed, but unrelated text changes are not.
+    """
+    before, after = entry_identity(original), entry_identity(revised)
+    if not before or not after or before[0] != after[0]:
+        return False
+    if before[1] is None or after[1] is None:
+        return before == after
+    if len(before[1]) < 4 and len(after[1]) < 4:
+        return False
+    anchor = float(before[1] if len(before[1]) >= 4 else after[1])
+    old_post = parse_uz_gold_post(original, quote=anchor, fallback_levels=True)
+    new_post = parse_uz_gold_post(revised, quote=anchor, fallback_levels=True)
+    if old_post.kind != 'entry' or new_post.kind != 'entry' or old_post.zone is None or old_post.zone != new_post.zone:
+        return False
+    def body(text: str) -> str:
+        text = re.sub(r'\bTP\s*[:=]?\s*\d{1,6}(?:\.\d+)?\b', '', text, flags=re.I)
+        text = re.sub(r'\bSL\s*[:=]?\s*\d+(?:\.\d+)?(?:\s*PIPS?)?\b', '', text, flags=re.I)
+        return ' '.join(_RANGE.sub('<zone>', text).lower().split())
+    return body(original) == body(revised)
+
+
 def parse_uz_gold_post(text: str, *, quote: float | None, fallback_levels: bool = False) -> GoldZonePost:
     """Interpret a channel post without authorizing a trade or guessing absent SL."""
     text = text or ''
@@ -157,8 +208,13 @@ def parse_uz_gold_post(text: str, *, quote: float | None, fallback_levels: bool 
     if _REENTRY_ANNOUNCEMENT.fullmatch(text):
         # "Stop hit, I will give a re-entry": an announcement, not an order.
         return GoldZonePost('ignored', action='reentry_announced')
-    if re.search(r'\bb\s*/\s*u\b|bezubit|bezub', lower):
-        return GoldZonePost('management', action='break_even_request')
+    if _BE_MENTION.search(text):
+        if _BE_CLOSE.search(text) and not _BE_NONCOMMAND.search(text):
+            return GoldZonePost('management', action='close_at_break_even_request')
+        if ((_BE_MOVE.search(text) and not _BE_NONCOMMAND.search(text))
+                or re.fullmatch(r'\s*b\s*/\s*u\s*[.!‼️❗️✅]*\s*', text, re.I)):
+            return GoldZonePost('management', action='break_even_request')
+        return GoldZonePost('ignored', action='break_even_mentioned')
     if re.search(r'\byop(?:ing|ish|dik|ildi|amiz|inglar)?\b|\byoping\b', lower):
         return GoldZonePost('management', action='close_request')
     reentry = _EXPLICIT_REENTRY.fullmatch(text)

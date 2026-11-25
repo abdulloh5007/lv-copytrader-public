@@ -453,8 +453,8 @@ class Ingestor:
             return
         if guarded_source:
             if guarded_signal:
-                await self.runtime.set_armed(False)
-                detail = "A channel signal was deleted; trading was disabled. Check any open positions; none were closed automatically."
+                detail = ("A channel signal was deleted. The deleted signal will not be opened; "
+                          "automatic trading remains unchanged and existing positions were not closed. Check the channel.")
                 self.runtime.bus.emit(events.SYSTEM_WARNING, reason="channel_signal_deleted", message=detail)
                 notifier = getattr(self.runtime, "notifier", None)
                 if notifier is not None:
@@ -819,7 +819,7 @@ class Ingestor:
     ) -> None:
         """Disarm on a material edit before any queued agent can open another leg."""
         from app.ai.xauuad_template import CHANNEL_CHAT_ID, parse_channel_post
-        from app.ai.uz_gold_zone import entry_identity
+        from app.ai.uz_gold_zone import entry_identity, equivalent_entry_revision
         async with session_scope() as session:
             research_chat = await get_setting(session, "ingest.research_only_chat_id", None)
             if chat_id != CHANNEL_CHAT_ID and str(chat_id) != str(research_chat):
@@ -838,12 +838,26 @@ class Ingestor:
                 new_id = (after.side, after.zone) if after.kind in {"entry", "complete"} else None
             else:
                 old_id, new_id = entry_identity(previous.text), entry_identity(current.text)
+                if old_id and new_id and equivalent_entry_revision(previous.text, current.text):
+                    return
         if old_id is None or new_id is None or old_id == new_id:
             return
         if (str(chat_id) == str(research_chat) and old_id[0] == new_id[0]
                 and (old_id[1] is None or new_id[1] is None)):
             # Adding a printed zone to a market-now instruction is not a
             # direction correction. Two printed zones still compare exactly.
+            return
+        if str(chat_id) == str(research_chat):
+            detail = (f"Signal {message_id} changed direction or entry zone. The updated post "
+                      "will be checked; existing positions will not be reversed automatically.")
+            self.runtime.bus.emit(events.SYSTEM_WARNING, reason="channel_signal_corrected",
+                                  message_id=message_id, message=detail)
+            notifier = getattr(self.runtime, "notifier", None)
+            if notifier is not None:
+                text = notifier.render_attention(subject="channel signal corrected", detail=detail)
+                notifier.fire("attention", text or detail)
+            log.warning("gold_signal_corrected message_id=%s old_side=%s new_side=%s trading_state_unchanged=true",
+                        message_id, old_id[0], new_id[0])
             return
         await self.runtime.set_armed(False)
         detail = (f"Signal {message_id} was edited from {old_id} to "

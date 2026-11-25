@@ -702,3 +702,39 @@ def test_refresh_prefers_fresh_telegram_edit():
     fresh = {'message_id': 1, 'text': 'new edit', 'origin': 'telegram'}
     assert merge_corpus([stored], [fresh])[0]['text'] == 'old edit'
     assert merge_corpus([stored], [fresh], prefer_telegram=True)[0]['text'] == 'new edit'
+
+
+async def test_old_breakeven_example_and_parent_survive_bounded_refresh(data_dir: Path) -> None:
+    from app.reviewer.study import MAX_CORPUS_CHARS, MAX_CORPUS_MESSAGES, load_db_messages, merge_corpus, render_corpus
+    await init_db()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    async with session_scope() as session:
+        source = Source(kind='telegram', chat_id=-100990, title='Gold', entity_type='channel', is_active=True)
+        other = Source(kind='telegram', chat_id=-100991, title='Other', entity_type='channel', is_active=False)
+        session.add_all([source, other]); await session.flush()
+        source_id = source.id
+        old = now - timedelta(days=20)
+        session.add_all([
+            Message(source_id=source_id, message_id=100, kind='text', status='processed',
+                    text='3914-19 sell zone', posted_at=old),
+            Message(source_id=source_id, message_id=101, reply_to_message_id=100, kind='text',
+                    status='processed', text='Ochiq bitmlarni b/u qo’ying', posted_at=old + timedelta(minutes=5)),
+            Message(source_id=other.id, message_id=102, kind='text', status='processed',
+                    text='b/u private other channel', posted_at=now),
+        ])
+        for index in range(205):
+            session.add(Message(source_id=source_id, message_id=1000 + index, kind='text', status='processed',
+                                text=f'latest update {index} ' + 'x' * 350,
+                                posted_at=now - timedelta(minutes=205-index)))
+    rows = await load_db_messages(source_id)
+    fresh = {'message_id': 101, 'text': 'Ochiq bitmlarni b/u qo’ying', 'origin': 'telegram',
+             'reply_to_message_id': 100, 'posted_at': old + timedelta(minutes=5), 'kind': 'text'}
+    rows = merge_corpus(rows, [fresh], prefer_telegram=True)
+    by_id = {row['message_id']: row for row in rows}
+    assert len(rows) <= MAX_CORPUS_MESSAGES
+    assert by_id[100]['study_anchor'] and by_id[101]['study_anchor']
+    assert 102 not in by_id and 1204 in by_id
+    corpus = render_corpus('Gold', -100990, rows)
+    assert len(corpus) <= MAX_CORPUS_CHARS
+    assert '#100 text' in corpus and '#101 text reply_to=#100' in corpus
+    assert '#1204 text' in corpus and 'private other channel' not in corpus
